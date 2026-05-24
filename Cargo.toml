@@ -1,0 +1,119 @@
+[package]
+name = "ies"
+version = "0.1.0"
+edition = "2024"
+
+
+[features]
+#default = ["rustcrypto", "rustcrypto-older", "rustcrypto-alternate" ]
+#default = [ "rustcrypto", "rustcrypto-older"]
+#default = ["rustcrypto-older", "dep:rsa", "dep:aes-gcm", "dep:aes", "dep:sha2", "dep:ml-kem", "kems/rustcrypto-ml-kem", "dep:x448", "dep:x25519-dalek",  "dep:hmac", "dep:cbc", "dep:p256", "dep:p384", "dep:p521", "kems/rustcrypto-rsa", "kems/rustcrypto-x25519", "kems/rustcrypto-sha2", "dep:sha3"]
+
+
+all = ["rustcrypto-mlkem", "rustcrypto-aes", "rustcrypto-rsa", "rustcrypto-hmac", "rustcrypto-sha1", "rustcrypto-sha2", "rustcrypto-sha3", "rustcrypto-p256", "rustcrypto-blake2", "rustcrypto-cmac", "rustcrypto-salsa20",
+        "rustcrypto-p384", "rustcrypto-p521","rustcrypto-cbc","rustcrypto-p192","rustcrypto-p224", "rustcrypto-x25519", "rustcrypto-x448", "rustcrypto-des", "rustcrypto-secretbox", "rustcrypto-sm2", "rustcrypto-sm3"]
+    
+rustcrypto-cbc = ["dep:cbc"]
+rustcrypto-cmac = [ "kdfs/rustcrypto-cmac"]
+rustcrypto-mlkem = ["dep:ml-kem", "kems/rustcrypto-ml-kem"]
+rustcrypto-aes =  ["dep:aes", "dep:aes-gcm", "kems/rustcrypto-aeskw", "kdfs/rustcrypto-aes", ]
+rustcrypto-rsa =  ["dep:rsa", "kems/rustcrypto-rsa" ]
+rustcrypto-hmac = ["dep:hmac", "kems/rustcrypto-hmac" ]
+rustcrypto-sha1 = ["dep:sha1", "kdfs/rustcrypto-sha1" ]
+rustcrypto-sha2 = ["dep:sha2", "kems/rustcrypto-sha2" ]
+rustcrypto-sha3 = ["dep:sha3", "kems/rustcrypto-sha3" ]
+rustcrypto-p192 = ["dep:p192" ]
+rustcrypto-p224 = ["dep:p224", "kems/rustcrypto-p224" ]
+rustcrypto-p256 = ["dep:p256", "kems/rustcrypto-p256" ]
+rustcrypto-p384 = ["dep:p384", "kems/rustcrypto-p384" ]
+rustcrypto-p521 = ["dep:p521", "kems/rustcrypto-p521" ]
+rustcrypto-x25519 = ["dep:x25519-dalek", "kems/rustcrypto-x25519"]
+rustcrypto-x448 = ["dep:x448", "kems/rustcrypto-x448"]
+rustcrypto-sm2 = ["dep:sm2"]
+rustcrypto-sm3 = ["dep:sm3"]
+rustcrypto-des = ["dep:des"]
+rustcrypto-blake2 = ["dep:blake2"]
+rustcrypto-salsa20 = ["dep:salsa20", "kdfs/rustcrypto-salsa20"]
+rustcrypto-chacha20poly1305 = ["dep:chacha20poly1305"]
+rustcrypto-secretbox = ["dep:crypto_secretbox" ]
+
+
+[dependencies]
+kdfs = { path = "../kdfs" }
+kems = { path = "../kems" }
+
+crypto-common = { version = "0.2.0"}
+aead = { version="0.6.0-rc.0", features = ["alloc"]}
+digest = "0.11.0"
+cipher = { version = "0.5.0", features = ["block-padding", "alloc", "stream-wrapper"]  }
+generic-array-old = { version = "0.14.7", package = "generic-array" }
+const-oid = { version = "0.9.6", features=["db"] }
+
+
+p192 = { version = "0.14.0-rc.7", optional = true }
+p224 = { version = "0.14.0-rc.7", optional = true }
+p256 = { version = "0.14.0-rc.7", optional=true } #, features = ["jwk"] }
+p384 = { version = "0.14.0-rc.7", optional =true} #, features = ["jwk"] }
+p521 = { version = "0.14.0-rc.7", optional = true}
+sm2 = { version = "0.14.0-rc.7", optional = true }
+
+aes  =  { version = "0.9.0-rc.0", optional = true }
+aes-gcm = { version = "0.11.0-rc.3", optional = true }
+aes-kw = { version = "0.3.0-rc.1"}
+des = { version = "0.9.0-rc.0", optional = true }
+rsa  = { version = "0.10.0-rc.0", optional = true, features = ["hazmat"]}
+sha1_old = { version = "0.10.6", package="sha1" }
+sha1 = { version = "0.11.0-rc.0", optional = true }
+sha2_old = { version = "0.10.8", package = "sha2" }
+sha2 = { version = "0.11.0-rc.0", optional = true }
+sha3 = { version = "0.11.0-rc.3", optional = true }
+sm3 = { version = "0.5.0", optional = true }
+hmac = { version = "0.13.0-rc.0", optional = true }
+
+ml-kem = { version = "0.2.1", optional = true }
+x448 = { version = "0.6.0", optional = true}
+x25519-dalek = { version = "2.0.0", optional = true, features = ["static_secrets"] }
+
+cbc  = { version = "0.2.0", optional = true }
+blake2 = { version = "0.11.0-rc.5", optional = true}
+salsa20 = { version = "0.11.0-rc.0", optional = true}
+chacha20poly1305 = { version = "0.11.0-rc.2", optional = true }
+
+crypto_secretbox = { version = "0.1.1", optional = true}
+
+spki_new = { version = "0.8.0-rc.4", package="spki"}
+
+
+[dev-dependencies]
+ies = { path = ".", features=["all"] }
+
+hex-literal = "0.4.1"
+der = { version = "0.7.6", features=["derive"], package="der"}
+cms = "0.2.3"
+cms_new = { version = "0.3.0-pre.2", package="cms" } # pre versions are not ready for use
+der_new = { version = "0.8.0-rc.10", package="der" }
+const_oid_new = { version = "0.10.0", package="const-oid"}
+x509_cert_new = { version = "0.3.0-rc.4", package="x509-cert"}
+
+pkcs1 = { version = "0.7.5" }
+pkcs1_new = { version = "0.8.0-rc.4", package="pkcs1" }
+pkcs8 = { version = "0.10.2" }
+pkcs8_new = { version = "0.11.0", package="pkcs8" }
+#pkcs12_new = { version = "0.2.0-pre.0", package="pkcs12" }
+#ml_kem_new = { version = "0.3.0-pre.0", package="ml-kem"}
+
+pem = "2"
+
+elliptic-curve = { version = "0.14.0-rc.17", features=["serde"] } #, features = ["jwk", "ecdh"] }
+
+ocb3 = { version = "0.2.0-rc.0"}
+ofb = { version = "0.7.0"}
+ctr = "0.10.0"
+
+serde_json = "1.0.128"
+base64 = "0.21.5"
+
+rand = { version = "0.10.0-rc.9"}
+#poly1305 = {version = "0.9.0-rc.5"}
+poly1305 = {version = "0.8.0"}
+
