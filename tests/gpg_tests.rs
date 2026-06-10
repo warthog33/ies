@@ -22,8 +22,6 @@ mod common;
 
 #[test]
 fn test_rfc_9580_a_8 () {
-    
-
     let ephem_pub_key = hex!("87 cf 18 d5 f1 b5 3f 81 7c ce 5a 00 4c f3 93 cc 89 58 bd dc 06 5f 25 f8 4a f5 09 b1 7d d3 67 64");
     let ephem_prv_key = hex!("af 1e 43 c0 d1 23 ef e8 93 a7 d4 d3 90 f3 a7 61 e3 fa c3 3d fc 7f 3e da a8 30 c9 01 13 52 c7 79");
 
@@ -49,22 +47,14 @@ fn test_rfc_9580_a_8 () {
     let chunk_0_plaintext = hex!("cb 13 62 00 00 00 00 00 48 65 6c 6c 6f 2c 20 77 6f 72 6c 64 21");
     let chunk_0_padding = hex!("d5 0e c5 a2 93 07 29 91 62 81 47 d7 2c 8f 86 b7");
 
-    //let pred_rng_1 = PredictableRng::new(&recip_prv_key);
-    //let recipient_secret_key = StaticSecret::random_from_rng(pred_rng_1);
     let recipient_secret_key = StaticSecret::from(recip_prv_key);
     let recipient_public_key = PublicKey::from(&recipient_secret_key);
 
     assert! ( recipient_secret_key.as_bytes() == &recip_prv_key);
     assert! ( recipient_public_key.as_bytes() == &recip_pub_key);
 
-    //let mut pred_rng2 = PredictableRng::new(&ephem_prv_key);
+    let en = KemWithKdf::<X25519Capsulator<SeedAsScalar>, CombinerAllPubKeys, EcCombinerOpenPgp<Hkdf<Sha256>>, U16>::from_public_key(recipient_public_key);
 
-    //let en = X25519Encapsulator::<EcCombinerOpenPgp<Hkdf<Sha256>>, U16>::default();
-    //let en = X25519Encapsulator::<EcCombinerOpenPgp<Hkdf<Sha256>>, U16>::from_bytes(&recipient_public_key.to_bytes().into());
-    let en = KemWithKdf::<X25519Capsulator<SeedAsScalar>, CombinerAllPubKeys, EcCombinerOpenPgp<Hkdf<Sha256>>, U16>::new_encapsulator(recipient_public_key);
-
-    //let (ek, sk) = en.try_encap(&mut pred_rng2, &recipient_public_key).unwrap();
-    //let (ek, sk) = en.encapsulate(&mut pred_rng2).unwrap();
     let (ek, sk) = en.encapsulate_deterministic(&ephem_prv_key).unwrap();
     assert!( ek.as_ref() == ephem_pub_key );
     assert!( sk.as_slice() == derived_shared_secret );

@@ -60,7 +60,7 @@ fn rfc_draft_shen_sm2_key_exchange_example_1 ()
 
     type EcdhSm2X963KdfSm2 = KemWithKdf<EcdhKem<sm2::Sm2, EcUncompressedEncoder<sm2::Sm2>, SeedAsScalar>, CombinerNoKeys, X963Kdf<sm3::Sm3>, U16>;
     //let encapsulator = EcdhEncapsulator::<_, EcCombinerNoPubKeys::<X963Kdf<sm3::Sm3>>, U16, EcUncompressedEncoder<sm2::Sm2>>::from_key(dA2.public_key());
-    let encapsulator = EcdhSm2X963KdfSm2::new_encapsulator(dA2.public_key());
+    let encapsulator = EcdhSm2X963KdfSm2::from_public_key(dA2.public_key());
     let (ek, sk) = encapsulator.encapsulate_deterministic (&r).unwrap();
 
     let x1 = hex!("64CED1BD BC99D590 049B434D 0FD73428 CF608A5D B8FE5CE0 7F150269 40BAE40E");

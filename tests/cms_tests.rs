@@ -1,128 +1,52 @@
-
-//use std::env;
-
-use aead::consts::{U12, U16, U24, U32, U128, U384};
+use aead::consts::{U12, U16, U24, U32, U128, U256, U384};
 use aead::{KeyInit, AeadInOut};
 
-use const_oid_new::db::rfc5911::ID_AES_256_CBC;
-//use der_new::DecodePem;
-use kdfs::ansi_x9_63::X963Kdf;
 
 use aes::{Aes128, Aes192, Aes256};
 use aes_gcm::AesGcm;
+use aes_kw::{KwAes128, KwAes256};
 use base64::Engine;
 use cipher::{BlockModeDecrypt, KeyIvInit,StreamCipher};
-use cipher::block_padding::Pkcs7;
-
-
-// use cms_new::authenticated_data::MessageAuthenticationCode;
-// use cms::content_info::CmsVersion;
-//use cms_new::enveloped_data::{EncryptedContentInfo, OriginatorInfo, RecipientInfo::Kari, RecipientInfos, EncryptedKey, EnvelopedData, RecipientEncryptedKey, RecipientIdentifier,OriginatorIdentifierOrKey::OriginatorKey,RecipientInfo::{Ktri,Ori}};
+use cipher::block_padding::{Iso7816, Pkcs7};
 use cms_new::enveloped_data::{RecipientInfo::Kari, EnvelopedData, RecipientEncryptedKey, OriginatorIdentifierOrKey::OriginatorKey,RecipientInfo::{Ktri}};
-//use cms::signed_data::SignedData;
-use cms::cert::x509::{der, der::{Encode, Decode,Choice}};
-use cms::cert::x509::der::{Sequence};
+use cms_new::content_info::CmsVersion::V0;
+use cms::cert::x509::der::{Encode, Decode,Choice, Sequence};
 use cms::cert::x509::der::asn1::{OctetString, Any, BitString};
-use cms::cert::x509::spki::{AlgorithmIdentifier, AlgorithmIdentifierOwned};
-use cms::cert::x509::spki::SubjectPublicKeyInfo;
-
-//use const_oid::db::rfc5911::{ID_AES_256_GCM, ID_AES_256_WRAP};
-//#[cfg(all(feature = "rustcrypto"))]
-//use const_oid::db::rfc5911::{ID_AES_128_WRAP, ID_DATA, ID_AES_192_WRAP, ID_AES_128_GCM, ID_CT_AUTH_ENVELOPED_DATA, ID_ENVELOPED_DATA, ID_AES_128_CBC, ID_SIGNED_DATA};
-//#[cfg(all(feature = "rustcrypto"))]
-//use const_oid::db::rfc5912::{ID_EC_PUBLIC_KEY, RSA_ENCRYPTION, ID_RSAES_OAEP, ID_SHA_256};
-//use const_oid::AssociatedOid;
-
-//use der::asn1::SetOfVec;
+use cms::cert::x509::spki::{AlgorithmIdentifier, AlgorithmIdentifierOwned,SubjectPublicKeyInfo};
+use const_oid_new::db::rfc5911::{ID_AES_256_CBC, ID_ENVELOPED_DATA};
+use const_oid_new::db::rfc9688::ID_KDF_KDF_3;
 use des::TdesEde3;
-
 use elliptic_curve::SecretKey;
-
+use hex_literal::hex;
 use ies::{SimpleIes, Ies, IesWithKeyWrap};
-use ies::cms::{A256CbcNoMac, ID_AES_128_OFB_NEW};
-use ies::cms::TdesCbcNoMac;
-use ies::encrypt_then_mac::StreamNoMac;
-//use ies::cms::{ID_AES_128_OFB,KDF_FOR_ML_KEM, OID_ML_KEM_512};
-
-use kdfs::InitSalt;
+use ies::cms::{A256CbcNoMac, TdesCbcNoMac, ID_AES_128_OFB_NEW};
+use ies::encrypt_then_mac::{EncryptNoMac, StreamNoMac};
+use kdfs::{InitSalt, Kdf};
+use kdfs::ansi_x9_63::X963Kdf;
 use kdfs::ansi_x9_44::X944Kdf3;
 use kdfs::misc::PassThroughKdf;
 use kdfs::hybrid_array::Array;
-
-#[cfg(all(feature = "rustcrypto-mlkem", feature="rustcrypto-p256", feature="rustcrypto-sha3"))]
-use kems::draft_ietf_lamps_pq_composite_kem_07::HybridKemMlKem768P256Sha3_256;
-#[cfg(all(feature = "rustcrypto-mlkem"))]
-use kems::ml_kem::MlKemWrapper;
+use kdfs::rfc5869_hkdf::Hkdf;
 use kems::{Capsulator, FromKey, SetKdf, OsRng, EncodedSizeUser2, GetEncapsulator};
-
-#[cfg(all(feature = "rustcrypto-mlkem", feature="rustcrypto-sha2"))]
+use kems::draft_ietf_lamps_pq_composite_kem_07::HybridKemMlKem768P256Sha3_256;
 use kems::draft_ietf_lamps_cms_kyber::MlKem512Hkdf256;
+use kems::generic_array::GenericArray;
 use kems::kem_with_kdf::{CombinerNoKeys, KemWithKdf};
-#[cfg(all(feature = "rustcrypto-rsa"))]
+use kems::ml_kem::MlKemWrapper;
 use kems::rsakem::{RsaOrigKem,RsaPkcs15Kem,RsaOaepKem};
-#[cfg(all(feature = "rustcrypto-sha2"))]
-use kems::rfc5753::{DhSinglePassStdDhSha384KdfScheme, DhSinglePassStdDhSha512KdfScheme};
+use kems::rfc5753::{DhSinglePassStdDhSha384KdfScheme, DhSinglePassStdDhSha512KdfScheme,DhSinglePassStdDhSha256KdfScheme};
 use kems::eckem::{EcdhKem, EcUncompressedEncoder};
-#[cfg(all(feature = "rustcrypto-sha2"))]
-use kems::rfc5753::DhSinglePassStdDhSha256KdfScheme;
-
-
-#[cfg(all(feature = "rustcrypto-p384"))]
-use p384::NistP384;
-#[cfg(all(feature = "rustcrypto-p521"))]
-use p521::{elliptic_curve};
-
-  
-
-  
-// use ecies_kem::cms::{A256CbcNoMac,TdesCbcNoMac,ID_AES_128_OFB};
-// use ecies_kem::ecies::{SimpleIes, IesWithKeyWrap};
-// use ecies_kem::encrypt_then_mac::StreamNoMac;
-//use kem::Decapsulator;
-
-
+use ml_kem::{KemCore, MlKem512, MlKem512Params, EncodedSizeUser};
+use ml_kem::kem::Decapsulate;
 use p256::NistP256;
+use p384::NistP384;
 use p521::NistP521;
 use pkcs8::ObjectIdentifier;
-
+use rsa::traits::PublicKeyParts;
 use rsa::{pkcs1::DecodeRsaPrivateKey, pkcs8::{DecodePrivateKey, DecodePublicKey}};
-
-// #[cfg(all(feature = "rustcrypto"))]
-// use rsa_old::pkcs8::der::asn1::OctetString;
-//#[cfg(all(feature = "rustcrypto"))]
-
-
-
-// #[cfg(all(feature = "rustcrypto"))]
-// use spki::{AlgorithmIdentifierOwned,AlgorithmIdentifier};
-//use sha1::Sha1;
-#[cfg(all(feature = "rustcrypto-sha2"))]
 use sha2::{Sha256,Sha512};
-//use cms::cert::x509::Certificate;
-#[cfg(all(feature = "rustcrypto-mlkem"))]
-use ml_kem::{KemCore, MlKem512, MlKem512Params, EncodedSizeUser};
-#[cfg(all(feature = "rustcrypto-mlkem"))]
-use ml_kem::kem::Decapsulate;
-//use std::time::SystemTime;
 
-//use aes_gcm::Aes128Gcm;
-use aes_kw::{KwAes128, KwAes256};
-
-//use ecies_kem::{cms::{KDF_FOR_ML_KEM, OID_ML_KEM_512}};
-use hex_literal::hex;
-//use hybrid_array::Array;
-use kdfs::{rfc5869_hkdf::Hkdf, Kdf};
-
-// #[cfg(all(feature = "rustcrypto"))]
-// use rsa::signature::Verifier;
-
-use kems::generic_array::GenericArray;
-
-//use rsa_old::pkcs8::der::*;
-   
 mod common;
-//use der::{Any,Sequence,Decode, Encode};
-
 
 ///
 /// Struct used as additional information in the derivation process used for ECIES
@@ -169,13 +93,10 @@ enum MlKemPrivateKeyChoice {
 ///
 /// echo "Hello World" > plaintext
 /// openssl cms -encrypt -in plaintext -out ciphertext  -recip p256-pub.pem -outform pem -aes192-wrap -aes256 -keyopt ecdh_kdf_md:sha256
-
-#[cfg(all(feature="rustcrypto-p256", feature="rustcrypto-sha2"))]
 #[test]
 #[allow(non_snake_case, unused)]
 fn test_cms_p256_decrypt()
 {
-    
     let priv_key_pem = "-----BEGIN EC PRIVATE KEY-----\n\
         MHcCAQEEIIAeR+r0C/MJx1xE9GUqBTFaCLl+9HeZrjKA1/jUC+D3oAoGCCqGSM49\n\
         AwEHoUQDQgAElRlvqDFGAdt8Lnp5LSlpli5oARWQPm85pro3s+wWAHbdh49IW+rb\n\
@@ -198,7 +119,7 @@ fn test_cms_p256_decrypt()
 
     // Decode CMS structure
     let content_info  = <cms_new::content_info::ContentInfo as der_new::Decode>::from_der(pem::parse(cms).unwrap().contents()).unwrap();
-    assert_eq! ( content_info.content_type, const_oid_new::db::rfc5911::ID_ENVELOPED_DATA);
+    assert_eq! ( content_info.content_type, ID_ENVELOPED_DATA);
     let enveloped_data = content_info.content.decode_as::<cms_new::enveloped_data::EnvelopedData>().unwrap();
 
     let iv = enveloped_data.encrypted_content.content_enc_alg.parameters.unwrap().decode_as::<der_new::asn1::OctetString>().unwrap();
@@ -233,7 +154,7 @@ fn test_cms_p256_decrypt()
     // Recover content encryption key
     //let kdf2 = EcCombinerX963::new_with_salt(&ecc_shared_info.to_der().unwrap());
     let kdf2 = X963Kdf::new_with_salt(&ecc_shared_info.to_der().unwrap());
-    let mut decapsulator = DhSinglePassStdDhSha256KdfScheme::new_decapsulator(recip_priv.clone());
+    let mut decapsulator = DhSinglePassStdDhSha256KdfScheme::from_private_key(recip_priv.clone());
     decapsulator.set_kdf(kdf2.clone());
     let shared_secret: Array<u8, U24> = decapsulator.decapsulate(&encapsulated_key).unwrap();
     let kek = aes_kw::KwAes192::new(&shared_secret);
@@ -245,7 +166,7 @@ fn test_cms_p256_decrypt()
 
     // Using Ies 
     //let decapsulator2 = EcdhKem::<_,_,U24, EcUncompressedEncoder<NistP256>>::new_decapsulator_with_params(recip_priv.clone(), kdf2.clone() );
-    let mut decapsulator2 = DhSinglePassStdDhSha256KdfScheme::new_decapsulator(recip_priv.clone());
+    let mut decapsulator2 = DhSinglePassStdDhSha256KdfScheme::from_private_key(recip_priv.clone());
     decapsulator2.set_kdf(kdf2.clone());
     
     let mut decryptor2 = IesWithKeyWrap::<DhSinglePassStdDhSha256KdfScheme<_,U24>, Aes192, A256CbcNoMac>::from_decapsulator(decapsulator2);
@@ -260,7 +181,7 @@ fn test_cms_p256_decrypt()
     let (encapped_key_3, ciphertext_4, encrypted_cek_4, tag4) = encryptor3.seal_detached(&mut OsRng, &cek, plaintext.as_ref(), iv.as_bytes().try_into().unwrap() ).unwrap();
 
     // Re-unwrap using AsymmKeyWrap
-    let mut decapsulator4 = KemWithKdf::<EcdhKem::<_,EcUncompressedEncoder<NistP256>>, CombinerNoKeys, _, U24>::new_decapsulator(recip_priv.clone());
+    let mut decapsulator4 = KemWithKdf::<EcdhKem::<_,EcUncompressedEncoder<NistP256>>, CombinerNoKeys, _, U24>::from_private_key(recip_priv.clone());
     decapsulator4.set_kdf(kdf2.clone());
     let mut decryptor4 = IesWithKeyWrap::<DhSinglePassStdDhSha256KdfScheme<NistP256, U24>, Aes192, A256CbcNoMac>::from_decapsulator(decapsulator4);
     let plaintext4 = decryptor4.open_detached(&encapped_key_3, ciphertext_4.as_slice().try_into().unwrap(), encrypted_cek_4.as_slice(), &tag4, &iv.as_bytes().try_into().unwrap()).unwrap();
@@ -329,7 +250,7 @@ fn test_cms_p384_decrypt2()
     // Recover key
     //let kdf2 = EcCombinerX963::new_with_salt(&ecc_shared_info.to_der().unwrap());
     let kdf2 = X963Kdf::new_with_salt(&ecc_shared_info.to_der().unwrap());
-    let mut decap = DhSinglePassStdDhSha384KdfScheme::new_decapsulator(recip_priv.clone());
+    let mut decap = DhSinglePassStdDhSha384KdfScheme::from_private_key(recip_priv.clone());
     decap.set_kdf(kdf2.clone());
     //let encapped_key = EcEncapKey::<NistP384,U24,EcUncompressedEncoder<_>>::from_bytes(orig.public_key.raw_bytes().into()).unwrap();
     let encapped_key = GenericArray::from_slice(orig.public_key.raw_bytes().into());
@@ -344,7 +265,7 @@ fn test_cms_p384_decrypt2()
 
     // Using Ies 
     //let mut decapsulator2 = EcdhKem::<_,_,U24, EcUncompressedEncoder<_>>::new_decapsulator(recip_priv.clone());
-    let mut decapsulator2 = DhSinglePassStdDhSha384KdfScheme::new_decapsulator(recip_priv.clone());
+    let mut decapsulator2 = DhSinglePassStdDhSha384KdfScheme::from_private_key(recip_priv.clone());
     decapsulator2.set_kdf(kdf2.clone() );
     let mut decryptor2 = IesWithKeyWrap::<DhSinglePassStdDhSha384KdfScheme<_,_>, Aes192, A256CbcNoMac>::from_decapsulator(decapsulator2);
     let plaintext2 = decryptor2.open_detached(&encapped_key, enc_key.as_bytes().try_into().unwrap(), ciphertext.as_bytes(), &[].into(), &iv.as_bytes().try_into().unwrap()).unwrap();
@@ -360,7 +281,7 @@ fn test_cms_p384_decrypt2()
 
     // Re-unwrap using AsymmKeyWrap
     //let mut decapsulator4 = EcdhKem::<_,_,U24, EcUncompressedEncoder<_>>::new_decapsulator(recip_priv.clone());
-    let mut decapsulator4 = DhSinglePassStdDhSha384KdfScheme::new_decapsulator(recip_priv.clone());
+    let mut decapsulator4 = DhSinglePassStdDhSha384KdfScheme::from_private_key(recip_priv.clone());
     decapsulator4.set_kdf(kdf2.clone() );
     //let mut decryptor4 = IesWithKeyWrap::<EcdhKemUncompressed::<_,_,U24, SeedAsScalar>, Aes192, A256CbcNoMac>::from_decapsulator(decapsulator4);
     let mut decryptor4 = IesWithKeyWrap::<DhSinglePassStdDhSha384KdfScheme<_,_>, Aes192, A256CbcNoMac>::from_decapsulator(decapsulator4);
@@ -452,7 +373,7 @@ fn test_cms_p256_decrypt_gcm() -> Result<(), pem::PemError>
     //let kdf2 = EcCombinerX963::<Sha256>::new_with_salt(&ecc_shared_info.to_der().unwrap());
     let kdf2 = X963Kdf::<Sha256>::new_with_salt(&ecc_shared_info.to_der().unwrap());
     //let mut decapsulator = EcdhDecapsulatorUncompressed::from_key(recip_private.clone());
-    let mut decapsulator = DhSinglePassStdDhSha256KdfScheme::new_decapsulator(recip_private.clone());
+    let mut decapsulator = DhSinglePassStdDhSha256KdfScheme::from_private_key(recip_private.clone());
     decapsulator.set_kdf(kdf2.clone());
     
     let shared_secret = decapsulator.decapsulate(encapsulated_key).unwrap();
@@ -560,9 +481,8 @@ fn test_cms_p521_decrypt()
     let ecc_shared_info = EccCmsSharedInfo{ key_info: AlgorithmIdentifierOwned { oid: const_oid::db::rfc5911::ID_AES_192_WRAP, parameters: None }, entity_uinfo, supp_pub_info: len };
 
     // Using discrete primitives
-    //let kdf2 = EcCombinerX963::<Sha512>::new_with_salt(&ecc_shared_info.to_der().unwrap());
     let kdf2 = X963Kdf::<Sha512>::new_with_salt(&ecc_shared_info.to_der().unwrap());
-    let mut decapsulator = DhSinglePassStdDhSha512KdfScheme::new_decapsulator(recipient_private.clone());
+    let mut decapsulator = DhSinglePassStdDhSha512KdfScheme::from_private_key(recipient_private.clone());
     decapsulator.set_kdf(kdf2.clone());
     let encapsulated_key = GenericArray::from_slice(orig.public_key.raw_bytes().into());
 
@@ -576,7 +496,6 @@ fn test_cms_p521_decrypt()
     assert! ( plaintext == b"Hello World\r\n" );
 
     // Using IES struct
-    //type IesCmsP521AesKw192A256Cbc = IesWithKeyWrap::<EcdhKemUncompressed::<NistP521,EcCombinerX963::<Sha512>,U24, SeedAsScalar>, Aes192, A256CbcNoMac>;
     type IesCmsP521AesKw192A256Cbc = IesWithKeyWrap::<DhSinglePassStdDhSha512KdfScheme<NistP521, U24>, Aes192, A256CbcNoMac>;
 
     let mut decryptor4 = IesCmsP521AesKw192A256Cbc::from_key_decap(recipient_private);
@@ -675,7 +594,7 @@ fn test_cms_p384_decrypt() -> Result<(), common::Error>
    
     //let kdf2 = EcCombinerX963::new_with_salt(&ecc_shared_info.to_der()?);
     let kdf2 = X963Kdf::new_with_salt(&ecc_shared_info.to_der()?);
-    let mut decapsulator = DhSinglePassStdDhSha256KdfScheme::new_decapsulator(priv_p256.clone());
+    let mut decapsulator = DhSinglePassStdDhSha256KdfScheme::from_private_key(priv_p256.clone());
     decapsulator.set_kdf(kdf2.clone());
     
     let shared_secret: Array<u8, U24> = decapsulator.decapsulate(&encapped_key).unwrap();
@@ -756,7 +675,7 @@ fn test_cms_rsa_pkcs15_dncrypt() -> Result<(), common::Error>
     assert! ( recip.key_enc_alg == spki_new::AlgorithmIdentifierOwned{ oid: const_oid_new::db::rfc5912::RSA_ENCRYPTION, parameters: Some(der_new::Any::null()) });
     assert! ( enveloped_data.encrypted_content.content_enc_alg.oid == const_oid_new::db::rfc5911::ID_AES_256_CBC);
     
-    let decapsulator = RsaPkcs15Kem::<U128, U32>::new_decapsulator(rsa_priv.clone());
+    let decapsulator = RsaPkcs15Kem::<U128, U32>::from_private_key(rsa_priv.clone());
     let encapsulated_cek = GenericArray::<u8,U128>::from_slice(recip.enc_key.as_bytes());
     let cek = decapsulator.decapsulate(&encapsulated_cek).unwrap();
         
@@ -836,7 +755,7 @@ fn test_cms_rsa_oaep_dncrypt() -> Result<(), common::Error>
     let ciphertext = encrypted_content.encrypted_content.unwrap();
 
     // Recover encryption key
-    let decapsulator = RsaOaepKem::<U128,U32,sha1::Sha1, sha1::Sha1>::new_decapsulator(rsa_priv.clone());
+    let decapsulator = RsaOaepKem::<U128,U32,sha1::Sha1, sha1::Sha1>::from_private_key(rsa_priv.clone());
     let cek = decapsulator.decapsulate(&encapsulated_key).unwrap();
     // Recover plaintext 
     let decryptor = cbc::Decryptor::<Aes256>::new(&cek, iv.as_bytes().try_into().unwrap());
@@ -916,7 +835,7 @@ fn test_cms_rsa_pkcs7_decrypt() -> Result<(), common::Error>
     let ciphertext = encrypted_content.encrypted_content.unwrap();
     
     // Recover key
-    let decapsulator = RsaPkcs15Kem::<U128,U24>::new_decapsulator(rsa_priv.clone());
+    let decapsulator = RsaPkcs15Kem::<U128,U24>::from_private_key(rsa_priv.clone());
     let cek = decapsulator.decapsulate(&encapsulated_key).unwrap();
     
     // Decrypt content
@@ -987,7 +906,7 @@ fn test_cms_rsa_oaep_decrypt() -> Result<(), common::Error>
     assert! ( recip.key_enc_alg == spki_new::AlgorithmIdentifierOwned{ oid: const_oid_new::db::rfc5912::ID_RSAES_OAEP, parameters: Some(der_new::Any::encode_from(&[0u8;0]).unwrap()) });
 
     // Recover content encryption key
-    let decapsulator = RsaOaepKem::<U128,U16,sha1::Sha1,sha1::Sha1>::new_decapsulator(rsa_priv.clone());
+    let decapsulator = RsaOaepKem::<U128,U16,sha1::Sha1,sha1::Sha1>::from_private_key(rsa_priv.clone());
     //let encapped_key: RsaEncapKey<_,U16> = RsaEncapKey::from_bytes(&GenericArray::<u8,U128>::from_slice(recip.enc_key.as_bytes()))?;
     //let cek = decapsulator.try_decap(&encapped_key)?;
     let encapped_key = GenericArray::<u8,U128>::from_slice(recip.enc_key.as_bytes());
@@ -1245,36 +1164,21 @@ fn test_cms_ml_kem_512() -> Result<(), common::Error>
     let kek2 = KwAes128::new(&kek.0.into());
     let mut cek2 = Array::<u8,U16>::default(); //[0u8; 16];
     kek2.unwrap_key(wrapped_key.as_bytes(), &mut cek2)?;
-
     assert_eq! ( cek2, cek);
 
     let mut decryptor = AesGcm::<Aes128,U12>::new(&cek2);
     let mut buf = ciphertext.as_bytes().to_vec();
     buf.extend_from_slice(mac.as_bytes());
     decryptor.decrypt_in_place(iv_params.aes_nonce.as_bytes().try_into().unwrap(), &[], &mut buf).unwrap();
-
     assert_eq!( buf, plaintext);
     
-    let kdf2 = Hkdf::<Sha256>::new_with_add_info(&other_info);
-    //let decap = MlKemCapsulator::<MlKemWrapper<MlKem512>, U16,_>::new_decapsulator_with_params(prv_key.clone(), kdf2.clone());
-    //let decap = MlKem512Hkdf256::<U16>::new_decapsulator_with_params(prv_key.clone(), kdf2.clone());
-
-    // let (_, mut decap) = MlKem512Hkdf256::<U16>::derive_from_seed(recipient_private_seed.as_bytes().try_into().unwrap());
-    // decap.set_kdf ( kdf2.clone() );
-    // //let mut decryptor = IesWithKeyWrap::<MlKemCapsulator::<MlKemWrapper<MlKem512>, U16, _>, Aes128, AesGcm<Aes128, U12>, MlKemEncapKey<MlKemWrapper<MlKem512>, U16>>::new_from_decapsulator(decap);
-
-    // let mut decryptor = IesWithKeyWrap::<MlKem512Hkdf256<U16>, Aes128, AesGcm<Aes128, U12>>::from_decapsulator(decap);
-
     let (encryptor4, mut decryptor4) = IesWithKeyWrap::<MlKem512Hkdf256<U16>, Aes128, AesGcm<Aes128, U12>>::derive_from_seed(recipient_private_seed.as_bytes().try_into().unwrap());
-    decryptor4.set_kdf(kdf2.clone());
-    //let mut decryptor = IesWithKeyWrap::<MlKem512Hkdf256<U16>, Aes128, AesGcm<Aes128, U12>>::from_key_decap(recipient_private);
-    //decryptor.set_kdf( kdf2.clone() );
-
-    //let encapsulated_key2 = MlKemEncapKey::from_bytes(encapped_key.as_bytes().into())?;
+    decryptor4.set_kdf(Hkdf::<Sha256>::new_with_add_info(&other_info));
+    
     let encapsulated_key2 = GenericArray::from_slice(encapped_key.as_bytes());
     let plaintext4 = decryptor4.open_detached(&encapsulated_key2, wrapped_key.as_bytes().try_into().unwrap(), ciphertext.as_bytes().as_ref(), mac.as_bytes().try_into().unwrap(), &iv_params.aes_nonce.as_bytes().try_into().unwrap()).unwrap();
-
     assert_eq! ( plaintext4, plaintext);
+
     Ok(())
 }
 
@@ -1406,21 +1310,20 @@ fn test_rfc_9690_d_1()
     assert_eq!(enveloped_data.recip_infos.0.len(), 1);
     let cms_new::enveloped_data::RecipientInfo::Ori(recip_info) = enveloped_data.recip_infos.0.get(0).unwrap() else { panic!("not an ori")};
 
-    //const ID_KEM_RECIPIENT_INFO: const_oid_new::ObjectIdentifier = const_oid_new::ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.16.13.3");
     const ID_KEM_RSA: const_oid_new::ObjectIdentifier = const_oid_new::ObjectIdentifier::new_unwrap("1.0.18033.2.2.4");
-    const _ID_KDF_3: const_oid_new::ObjectIdentifier = const_oid_new::ObjectIdentifier::new_unwrap("1.3.133.16.840.9.44.1.2");
-    //pub const ID_XX: crate::ObjectIdentifier = crate::ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.2.1");
-    //pub const ID_XX: crate::ObjectIdentifier = crate::ObjectIdentifier::new_unwrap("1.3.6.1.5.5.7.0.54");
-
+    
     assert_eq!(recip_info.ori_type, cms_new::kemri::ID_ORI_KEM); //1.2.840.113549.1.9.16.13.3
     let kem_recip_info = recip_info.ori_value.decode_as::<cms_new::kemri::KemRecipientInfo>().unwrap();
     
-    println! ("envel={:02X?}", kem_recip_info);
-
     assert_eq!(kem_recip_info.version, cms_new::content_info::CmsVersion::V0);
     assert_eq!(kem_recip_info.kek_length, 16);
     assert_eq!(kem_recip_info.kem, spki_new::AlgorithmIdentifier{oid: ID_KEM_RSA, parameters: None });
-    //assert_eq!(kem_recip_info.kdf, AlgorithmIdentifier{oid: ID_KDF_3, parameters: Some(Any::encode_from(&vec![ID_SHA_256]).unwrap()) });
+    println! ( "oid={:?}", kem_recip_info.kdf.parameters.as_ref().unwrap().decode_as::<spki_new::AlgorithmIdentifierOwned>());
+    //assert_eq!(kem_recip_info.kdf, spki_new::AlgorithmIdentifier{oid: ID_KDF_KDF_3 /*ID_KDF_3*/, parameters: Some(spki_new::der::Any::encode_from(&vec![const_oid_new::db::rfc5912::ID_SHA_256]).unwrap()) });
+    let sub = spki_new::AlgorithmIdentifier{oid: const_oid_new::db::rfc5912::ID_SHA_256, parameters: Some(der_new::Any::null())};
+    assert_eq!(kem_recip_info.kdf, spki_new::AlgorithmIdentifier{oid: ID_KDF_KDF_3, parameters: Some(spki_new::der::Any::encode_from(&sub).unwrap()) });
+    //assert_eq!(kem_recip_info.kdf, spki_new::AlgorithmIdentifier{oid: ID_KDF_KDF_3, parameters: Some(sub.owned_to_ref().try_into().unwrap()) });
+    
     assert_eq!(kem_recip_info.wrap, spki_new::AlgorithmIdentifier{oid: const_oid_new::db::rfc5911::ID_AES_128_WRAP, parameters:None});
     assert_eq!(kem_recip_info.ukm, None);
     let encrypted_key = kem_recip_info.encrypted_key.as_bytes();
@@ -1431,7 +1334,7 @@ fn test_rfc_9690_d_1()
     let ori = cms_new::kemri::CmsOriForKemOtherInfo{wrap: kem_recip_info.wrap, kek_length: kem_recip_info.kek_length, ukm: kem_recip_info.ukm};
     assert_eq!( der_new::Encode::to_der(&ori).unwrap(), cms_ori);
 
-    let decapsulator = RsaOrigKem::<U384, U16, X944Kdf3::<Sha256>>::new_decapsulator(bob_prv.clone());
+    let decapsulator = RsaOrigKem::<U384, U16, X944Kdf3::<Sha256>>::from_private_key(bob_prv.clone());
     let k_calc2 = decapsulator.decapsulate(&GenericArray::from_slice(kem_ct)).unwrap();
 
     assert_eq!(k_calc2, shared_secret);
@@ -1441,7 +1344,7 @@ fn test_rfc_9690_d_1()
     // Repeat with double kdf version
     let kdf4 = X944Kdf3::<Sha256>::new_with_salt(&cms_ori);
     //let decapsulator = <KemWithKdf::<RsaOrigKem::<U384, U16, X944Kdf3::<Sha256>>, X944Kdf3::<Sha256>, U16> as Capsulator>::Decapsulator::from_decapsulator_and_kdf(decapsulator, kdf4);
-    let decapsulator = KemWithKdf::<RsaOrigKem::<U384, U384, PassThroughKdf>, CombinerNoKeys, X944Kdf3::<Sha256>, U16>::new_decapsulator(bob_prv);
+    let decapsulator = KemWithKdf::<RsaOrigKem::<U384, U384, PassThroughKdf>, CombinerNoKeys, X944Kdf3::<Sha256>, U16>::from_private_key(bob_prv);
     let decapsulator = <KemWithKdf::<KemWithKdf::<RsaOrigKem::<U384, U384, PassThroughKdf>, CombinerNoKeys, X944Kdf3::<Sha256>, U16>, CombinerNoKeys, X944Kdf3::<Sha256>, U16> as Capsulator>::Decapsulator::from_decapsulator_and_kdf(decapsulator, kdf4);
 
     let kek3 = decapsulator.decapsulate(&GenericArray::from_slice(kem_ct)).unwrap();
@@ -1464,12 +1367,6 @@ fn test_rfc_9690_d_1()
     let plaintext = decryptor2.decrypt_padded::<Pkcs7>(&mut encrypted_field).unwrap();
 
     assert_eq!(plaintext, b"Hello, world!");
-
-    //assert_
-
-    
-
-
 }
 
 
@@ -1513,8 +1410,34 @@ fn test_rsa_kb ()
         0FCrJnD+u3zmQRET2Upv2z3fE+7Dg29B2S3yxcgrUvg=\n\
         -----END KTKDH_2Pass PEM File-----";
 
+let rsa_enc_mod = hex!("E0A258BA99AB65A891B3A643A022DA73C2A7E742EDF3676F6E5222A1D171
+        2714AB63E4B864A897DC03F2F6DC479CE059CE03558735F4E9007B7F60D4
+        6040D5F861545EAA3E78E8A74B52575EF6FA4C2DC2C61104409E572D9856
+        DF15471DA5C27BDDC68C32C98F10ACE63AFDED242B8727A55CAD9C2BEDBC
+        C50ABCB943943FE8E20ACC151253C161C71B0A972B45173F72642D9A1420
+        EF208DF64FEDE0576C40FC182BEAAE4DA1D0FC2877866FB87AD6361781B1
+        9821A1DE1362949843884B6B7E11F7E6337E31496771347A109EB31BB181
+        BAA43330CD2018CAAF90E5A74E84796D19F36DF019682E6A0EFA2D82D1A9
+        9A8D034A0F41D653FD76124A018FD6C1");
+    let rsa_enc_pub_exp = hex!("010001");
+    let rsa_enc_priv_exp = hex!("57612F6C9E9C1A7640FF05DCE66CC857215018D863213C8A0EFAEA37D1F5
+        D702E64C7C4AF1F4D6E5A1AFA0313DB61B5B3394FE6F13210A85C2846111
+        1BC3FCB79A7CAC3A4304DB53402C6E8A253E65E5A30F52CD39A99E35C13D
+        8197904B4B10650876D45069313A8657247964069EDBFB230AF3097DD903
+        860E502D2CC97D360A2C003EFD6DBD2598DA389D6FD4F7095EE3DD1AF0A7
+        65DC54AC1DB7901109C88BB446008E152CED91C557AFC3CA4EDD075C91FA
+        7498CB58D308373AC951327334321D15A300F38766BABE26EE7527D4FD50
+        18584121C5EA570C813BAFE7A3AE9D594E57E9BB34D6708A2C9095A0EA05
+        2075D6A71414FFAC6FD60037B7561AF1");
 
+    let rsa_enc_priv = rsa::RsaPrivateKey::from_components(rsa::BoxedUint::from_be_slice(&rsa_enc_mod, 2048).unwrap(), rsa::BoxedUint::from_be_slice(&rsa_enc_pub_exp, 257).unwrap(), rsa::BoxedUint::from_be_slice(&rsa_enc_priv_exp,2048).unwrap(), [].to_vec()).unwrap();
+    //let rsa_enc_pub = rsa::RsaPublicKey::fromopenssl::rsa::Rsa::from_public_components(BigNum::from_slice(&rsa_enc_mod).unwrap(), BigNum::from_slice(&rsa_enc_pub_exp).unwrap()).unwrap();
+    let rsa_enc_pub = rsa_enc_priv.as_public_key();
 
+    assert_eq!( rsa_enc_pub.n_bytes().as_ref(), rsa_enc_mod);
+    assert_eq!( rsa_enc_pub.e_bytes().as_ref(), rsa_enc_pub_exp);
+    
+        
     let content_info  = <cms_new::content_info::ContentInfo as der_new::Decode>::from_der(pem::parse(kb).unwrap().contents()).unwrap();
     assert_eq!(content_info.content_type, const_oid_new::db::rfc5911::ID_SIGNED_DATA);
     
@@ -1530,20 +1453,60 @@ fn test_rsa_kb ()
     assert_eq!( signer_info.version, cms_new::content_info::CmsVersion::V1);
     assert_eq!( signer_info.unsigned_attrs, None);
     assert_eq!( signer_info.digest_alg, spki_new::AlgorithmIdentifierOwned{oid: const_oid_new::db::rfc5912::ID_SHA_256, parameters: Some(der_new::Any::null())});
-    //assert_eq!( signer_info.sid, )
-
-    assert_eq!( signed_data.encap_content_info.econtent_type, const_oid_new::db::rfc5911::ID_ENVELOPED_DATA);
-    let _enveloped_data = signed_data.encap_content_info.econtent.unwrap().decode_as::<EnvelopedData>().unwrap();
-    //assert_eq!( enveloped_data.version, CmsVersion::V1);
-    //assert_eq!( enveloped_data.originator_info, None);
-
-    // let pub_key = rsa::RsaPublicKey::new(BoxedUint::from_be_slice(&rsa_mod, 2048).unwrap(), 
+        // let pub_key = rsa::RsaPublicKey::new(BoxedUint::from_be_slice(&rsa_mod, 2048).unwrap(), 
     //                     BoxedUint::from_be_slice(&rsa_pub_exp, 2048).unwrap()).unwrap();
     // let verifier = rsa::pkcs1v15::VerifyingKey::<Sha256>::new(pub_key);
     
     // let result = verifier.verify(signed_data.encap_content_info.econtent.as_ref().unwrap()., sig);
+    //assert_eq!( signer_info.sid, )
 
+    assert_eq!( signed_data.encap_content_info.econtent_type, const_oid_new::db::rfc5911::ID_ENVELOPED_DATA);
+    let enveloped_data = signed_data.encap_content_info.econtent.unwrap().decode_as::<EnvelopedData>().unwrap();
+
+    assert_eq!( enveloped_data.version, cms_new::content_info::CmsVersion::V0);
+    assert_eq!( enveloped_data.originator_info, None);
+    let recip_infos = enveloped_data.recip_infos;
+    assert_eq!( recip_infos.0.len(), 1);
+    let recip_info = recip_infos.0.get(0).unwrap();
     
+    let Ktri(ktri) = recip_info else { panic!( "UNhandled")};
+    //println! ( "ktri={:02X?}", ktri);
+    assert_eq!(ktri.version, V0);
+    assert_eq!(ktri.key_enc_alg.oid, const_oid_new::db::rfc5912::ID_RSAES_OAEP);
+    let rsa_oaep_params = ktri.key_enc_alg.parameters.as_ref().unwrap().decode_as::<pkcs1_new::RsaOaepParams>().unwrap();
+    assert_eq!(rsa_oaep_params.hash, spki_new::AlgorithmIdentifier::<der_new::AnyRef>{oid: const_oid_new::db::rfc5912::ID_SHA_256, parameters: Some(der_new::Any::null().to_ref())} );
+    assert_eq!(rsa_oaep_params.mask_gen.oid, const_oid_new::db::rfc5912::ID_MGF_1);
+    let mask_gen_parameters = rsa_oaep_params.mask_gen.parameters.unwrap();
+    assert_eq!(mask_gen_parameters.oid, const_oid_new::db::rfc5912::ID_SHA_256);
+    assert_eq!(mask_gen_parameters.parameters, Some(der_new::Any::null().to_ref()));
+    let _rid = &ktri.rid;
+    // Encrypted symmetric key
+    let encrypted_key = &ktri.enc_key;
+    assert_eq!(encrypted_key.as_bytes().len(), 256);
+    let decrypted_key = rsa_enc_priv.decrypt(rsa::Oaep::<Sha256>::new(), encrypted_key.as_bytes()).unwrap();
+    
+    let encrypted_content = enveloped_data.encrypted_content;
+    let iv = der_new::asn1::OctetString::new([162u8, 123, 180, 109, 28, 48, 110, 9]).unwrap();
+    //let content_enc_alg =  encrypted_content.content_enc_alg;
+    assert_eq!(encrypted_content.content_enc_alg, spki_new::AlgorithmIdentifierOwned{oid: const_oid_new::db::rfc5911::DES_EDE_3_CBC, parameters: Some(der_new::Any::encode_from(&iv).unwrap())});
+    assert_eq!(encrypted_content.content_type, const_oid_new::db::rfc5911::ID_DATA);
+
+    let encrypted_content = encrypted_content.encrypted_content.as_ref().unwrap().as_bytes();
+
+    let decryptor = cbc::Decryptor::<des::TdesEde3>::new_from_slices(&decrypted_key, iv.as_bytes()).unwrap();
+    let decrypted_content = decryptor.decrypt_padded_vec::<Iso7816>(encrypted_content).unwrap();
+    
+    assert_eq! ( decrypted_content, hex!("308192020101305A3042310B3009060355040613024245310D300B060355040A13046E65786F312430220603550403131B6E65786F2D4B6579496E6A656374696F6E5365727665722D544D310214095D11A33F944E00347A39596603D31A3EAB6EA9041037233E890B0104E9BC943D0E45EAE5A7301F06092A864886F70D0107013112041042303031364B31544430304E30303030"));
+
+    // Repeat using IES
+    let mut decryptor4 = SimpleIes::<RsaOaepKem<U256, U24, Sha256, Sha256>, EncryptNoMac<cbc::Encryptor<des::TdesEde3>, cbc::Decryptor<des::TdesEde3>, Iso7816>>::from_key_decap(rsa_enc_priv);
+    decryptor4.set_iv(iv.as_bytes().try_into().unwrap());
+    let c0 = GenericArray::from_slice(encrypted_key.as_bytes());
+    let result4 = decryptor4.try_open_detached(&c0, encrypted_content, &[].into()).unwrap();
+    
+    assert_eq! ( result4, hex!("308192020101305A3042310B3009060355040613024245310D300B060355040A13046E65786F312430220603550403131B6E65786F2D4B6579496E6A656374696F6E5365727665722D544D310214095D11A33F944E00347A39596603D31A3EAB6EA9041037233E890B0104E9BC943D0E45EAE5A7301F06092A864886F70D0107013112041042303031364B31544430304E30303030"));
+
+
 }
 
 
@@ -1783,472 +1746,3 @@ fn test_hybrid_cms_b_1() -> Result<(), common::Error>
     Ok(())
 }
 
-
-
-
-
-
-
-// //use core::slice::SlicePattern;
-// #[cfg(all(feature = "rustcrypto"))]
-// pub const DH_SINGLE_PASS_STD_DH_SHA512KDF_SCHEME: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.132.1.11.3");
-
-// /* Root key sample from X9.139 2025, ??  */
-// pub const SAMPLE_ROOT_KEY_P12:&str = "-----BEGIN EC PRIVATE KEY-----\
-//             MIHcAgEBBEIAwrTLgpy2/uZYdB4YdVsbpGPKjzs+Bp1kb/UlRXbX6LUWHOfZr5WD\
-//             NknLzsuYcGQOvyl+DoAQid+hNKboigDcozqgBwYFK4EEACOhgYkDgYYABABLyT3d\
-//             m0DDari8pmjkAelOuNFZimctgBVXJuvHKX4GMltvjbPv+/wfDS8XaqKeb4d+QA5j\
-//             3whabL/ZB2bHo/AmtQDS8yN+HOpaejjM3jyquyip+39tdv5E3NPuIF01R6McJx8N\
-//             4ddFwVlY/xVAeVcJcPf+rPkytC9GkVlRcGzDBUb8uA==\
-//             -----END EC PRIVATE KEY-----";
-
-
-// //A.1.1 139B CA Certificate
-// pub const SAMPLE_ROOT_CERT: &str = "-----BEGIN CERTIFICATE-----\
-//             MIICojCCAgOgAwIBAgIJAK5ize7B8y6rMAoGCCqGSM49BAMCMEMxCzAJBgNVBAYT\
-//             AlVTMQ0wCwYDVQQIDARVdGFoMQ0wCwYDVQQKDARBTlNJMRYwFAYDVQQDDA1QLTUy\
-//             MSBUZXN0IENBMB4XDTI1MDExMDE3NDU0MloXDTM1MDEwODE3NDU0MlowQzELMAkG\
-//             A1UEBhMCVVMxDTALBgNVBAgMBFV0YWgxDTALBgNVBAoMBEFOU0kxFjAUBgNVBAMM\
-//             DVAtNTIxIFRlc3QgQ0EwgZswEAYHKoZIzj0CAQYFK4EEACMDgYYABABLyT3dm0DD\
-//             ari8pmjkAelOuNFZimctgBVXJuvHKX4GMltvjbPv+/wfDS8XaqKeb4d+QA5j3wha\
-//             bL/ZB2bHo/AmtQDS8yN+HOpaejjM3jyquyip+39tdv5E3NPuIF01R6McJx8N4ddF\
-//             wVlY/xVAeVcJcPf+rPkytC9GkVlRcGzDBUb8uKOBnDCBmTAMBgNVHRMEBTADAQH/\
-//             MF0GA1UdIwRWMFShR6RFMEMxCzAJBgNVBAYTAlVTMQ0wCwYDVQQIDARVdGFoMQ0w\
-//             CwYDVQQKDARBTlNJMRYwFAYDVQQDDA1QLTUyMSBUZXN0IENBggkArmLN7sHzLqsw\
-//             HQYDVR0OBBYEFAcJE3efk8L3KZbPvSPj05f5iescMAsGA1UdDwQEAwIBBjAKBggq\
-//             hkjOPQQDAgOBjAAwgYgCQgDtce8d765QqlqSauy6muXPgdwdZIjCe3rL6gy/lU6G\
-//             KfvM+/yD1DvZTqWPDELD1QGti3inkUBvE/X0xrTyH8IdsQJCAOw2DuPACz5xxJGQ\
-//             zdmhROBEP+ZHC0QSYvhjhpR2og1pFz835XYAyUr0SY78rWDsaYYjVn//VRHl1CB2\
-//             Wc/7CWdW\
-//             -----END CERTIFICATE-----";
-  
-// //A.1.1 139B KDH Signer Key
-// pub const SAMPLE_KDH_SIGNER_KEY: &str = "-----BEGIN EC PRIVATE KEY-----\
-//             MIHcAgEBBEIB6MILLBHLMquU7EMH7oLDtkYipeErU5Kahi8rdyPqQe+R11d//3uF\
-//             PEG/EgasjzWOSTmYeiCED1Tak7YXZEFNZ6mgBwYFK4EEACOhgYkDgYYABAGEFh88\
-//             GGzTnp7/2XvPycL6NAb9ox5BeQS39fAIyNyjjpLan0Tjj/QdWO8VlJfoHodiUbW6\
-//             DULsCmUzucL4mu90BQCTD7HNpftl8v4kWGCeEceng/YAmMgvk3BT4fMhNztXHqUh\
-//             PJ/UlN6s48wh3LYvADbPkgITUFPYMtyUwpYbVhz28Q==\
-//             -----END EC PRIVATE KEY-----";
- 
-// //A.1.1 139B KDH Signer Certificate
-// pub const SAMPLE_KDH_SIGNER_CERT: &str = "-----BEGIN CERTIFICATE-----\
-//             MIIC7zCCAdqgAwIBAgIJAIRz7syolQSKMA0GCSqGSIb3DQEBCwUAMFoxCzAJBgNV\
-//             BAYTAlVTMRUwEwYDVQQIDAxQZW5uc3lsdmFuaWExEjAQBgNVBAcMCUZyYW5jb25p\
-//             YTEPMA0GA1UECgwGQ0ExVExTMQ8wDQYDVQQLDAZDQTFUTFMwHhcNMjQwODIwMTUw\
-//             NDQzWhcNMzQwODE4MTUwNDQzWjA/MQswCQYDVQQGEwJVUzENMAsGA1UECAwEVXRh\
-//             aDEQMA4GA1UECgwHVXRpbWFjbzEPMA0GA1UEAwwGU2lnbmVyMIGbMBAGByqGSM49\
-//             AgEGBSuBBAAjA4GGAAQABxUXGfzsppbq2FrfEMLoS0ANf5KbmgN2F1Bta9YThdym\
-//             LtJo8FhnLmN/3veHYbL4EXpjwcqqdFuZNENBut63PQ0A9QxdHob/bgS53b0JjaVg\
-//             ygJaSAXnirRpIDe9ovp6uPThBv2Z1UhdVYEtdat3UnDXk4KFS9itzHyF5rXzWda4\
-//             0/ajXjBcMAkGA1UdEwQCMAAwHwYDVR0jBBgwFoAULquPADAFitncBsJYuqGMiGur\
-//             AvMwHQYDVR0OBBYEFO6Jk8E+NdnsP1RslXIeQRzAy6UiMA8GA1UdEQQIMAaHBMCo\
-//             D1kwDQYJKoZIhvcNAQELBQADgf8AAPwkXS6nJ/cl3awsI6pMPpFrNkOEOikYOr/G\
-//             o4CfxCFLGrkI+eUaJIP/m1Oe//Gjh/Tuf6BbESHTCOv+LO6RP6kF6Wr1R0CLU2+a\
-//             Uk1iVU7u3jpiHsfwQmhYbNlJhFuHJAxCgV4INBfmevp8Vconw+zr0aeuJrpQrGhG\
-//             Fmjp/RWtk1W5CFbKQ38YJD4Y1E1ZDe9WRN2LqXF2QMUNVcXA00V8b0czEe1ffzBL\
-//             PoCICbnZ+Dzd9VFk1q/VyQwyE43g5waS2CslkCTbm+ezp//zA3q2RACIIs11Xe00\
-//             gp2D0tShvb/eSLCe4xQLEhFJpBXb5HUV8hCSZoX/Bbj1NF0=\
-//             -----END CERTIFICATE-----";
-
-// //A.1.1 139B KDH Signer Certificate - What I believe is the correct certificate
-// pub const SAMPLE_KDH_SIGNER_CERT2: &str = "-----BEGIN CERTIFICATE-----\
-//             MIICXzCCAcCgAwIBAgIJALIEwr4+D3kDMAoGCCqGSM49BAMCMEMxCzAJBgNVBAYT\
-//             AlVTMQ0wCwYDVQQIDARVdGFoMQ0wCwYDVQQKDARBTlNJMRYwFAYDVQQDDA1QLTUy\
-//             MSBUZXN0IENBMB4XDTI1MDEyODE2MDk1NloXDTM1MDEyNjE2MDk1NlowPzELMAkG\
-//             A1UEBhMCVVMxDTALBgNVBAgMBFV0YWgxEDAOBgNVBAoMB1V0aW1hY28xDzANBgNV\
-//             BAMMBlNpZ25lcjCBmzAQBgcqhkjOPQIBBgUrgQQAIwOBhgAEAYQWHzwYbNOenv/Z\
-//             e8/Jwvo0Bv2jHkF5BLf18AjI3KOOktqfROOP9B1Y7xWUl+geh2JRtboNQuwKZTO5\
-//             wvia73QFAJMPsc2l+2Xy/iRYYJ4Rx6eD9gCYyC+TcFPh8yE3O1cepSE8n9SU3qzj\
-//             zCHcti8ANs+SAhNQU9gy3JTClhtWHPbxo14wXDAJBgNVHRMEAjAAMB8GA1UdIwQY\
-//             MBaAFAcJE3efk8L3KZbPvSPj05f5iescMB0GA1UdDgQWBBQlpRlZUSIfY9+PgTPy\
-//             pZn12CHErDAPBgNVHREECDAGhwTAqA9ZMAoGCCqGSM49BAMCA4GMADCBiAJCAWnV\
-//             RKiCkQ0Sw1I44r97vNhhgWK3vm5sqVLfISVJ8KfsdGA5S9+Y5LsnUTNpFCLOUwTQ\
-//             +zHSpfYMCmgDefLv9dKmAkIAoyq4tN0d6WwF0wmP0D1rrg1b6O0pTiTwQAMSeXjX\
-//             uNVnpQmaebM2hxtr4QwXARM13tfGCBs72RthjSoTR6thHCY=\
-//             -----END CERTIFICATE-----";
-
-// //A.1.1 139B Sample KRD 1 Key
-// pub const SAMPLE_KRD_1_KEY: &str = "-----BEGIN EC PRIVATE KEY-----\n\
-//             MIHcAgEBBEIBY/zJA8UGrK+AUFSBmAUVnCh4HZxz3CaL9HfpkapmGMhnTiJgfSYT\n\
-//             kcT6er24+2FSb5DEKbNBeKO5zc1/qoKzdmCgBwYFK4EEACOhgYkDgYYABAHu0ZC4\n\
-//             mG/DB8qUlKfMyAmQDqPE0YkI6wRM0PUUMODnmenuY14kPYHot3NJGn5eEHSrmtaV\n\
-//             e+VgFvlyWZHs4By7SQBoVLijIpIo2btXzqG4Jgm2mhYb0sT1UQn8Is6FbeAh7Rbh\n\
-//             Xt/Ua8Xfs8JPbNnH7/gjs5FuPiqtl7JFDlYlVbVeeA==\n\
-//             -----END EC PRIVATE KEY-----";
-
-// //A.1.1 139B Sample KRD 1 Certificate
-// pub const SAMPLE_KRD_1_CERT: &str = "-----BEGIN CERTIFICATE-----\n\
-//             MIICZDCCAcWgAwIBAgIJALIEwr4+D3kFMAoGCCqGSM49BAMCMEMxCzAJBgNVBAYT\n\
-//             AlVTMQ0wCwYDVQQIDARVdGFoMQ0wCwYDVQQKDARBTlNJMRYwFAYDVQQDDA1QLTUy\n\
-//             MSBUZXN0IENBMB4XDTI1MDEyODE5MzQxOVoXDTM1MDEyNjE5MzQxOVowRDELMAkG\n\
-//             A1UEBhMCVVMxDTALBgNVBAgMBFV0YWgxEDAOBgNVBAoMB1V0aW1hY28xFDASBgNV\n\
-//             BAMMCzU1NS0wMDAtNTIxMIGbMBAGByqGSM49AgEGBSuBBAAjA4GGAAQB7tGQuJhv\n\
-//             wwfKlJSnzMgJkA6jxNGJCOsETND1FDDg55np7mNeJD2B6LdzSRp+XhB0q5rWlXvl\n\
-//             YBb5clmR7OAcu0kAaFS4oyKSKNm7V86huCYJtpoWG9LE9VEJ/CLOhW3gIe0W4V7f\n\
-//             1GvF37PCT2zZx+/4I7ORbj4qrZeyRQ5WJVW1XnijXjBcMAkGA1UdEwQCMAAwHwYD\n\
-//             VR0jBBgwFoAUBwkTd5+Twvcpls+9I+PTl/mJ6xwwHQYDVR0OBBYEFE8Vy2l4pG2G\n\
-//             oYyPYc6jw7mrT9HsMA8GA1UdEQQIMAaHBMCoD1kwCgYIKoZIzj0EAwIDgYwAMIGI\n\
-//             AkIBd9teq6QbExzESGsaLJqaDzRi4iDldqqimpNdj3+HzuhFDXZm6SSMcV/3Qge9\n\
-//             zup/l71CufSr+YLW00MzW0V4zSoCQgHg2KAF0wD87VV7W5gQSS73R0LA813iaV6e\n\
-//             Sx1GB9RswkO+YD/D1ekzumVhwlRLzpJ7UBqqmtVfo10Xim0btsX3eg==\n\
-//             -----END CERTIFICATE-----";
-
-// //A.1 X9-AWKB
-// pub const SAMPLE_AWKB: &str = "\
-//             MIIHyAYJKoZIhvcNAQcCoIIHuTCCB7UCAQExDTALBglghkgBZQMEAgMwggJJBgkq\
-//             hkiG9w0BBwGgggI6BIICNjCCAjIGCSqGSIb3DQEHA6CCAiMwggIfAgECMYIBOKGC\
-//             ATQCAQOggZehgZQwCQYHKoZIzj0CAQOBhgAEAKpxx7ZWz7qVLes9Cf8rtdccYGRY\
-//             1EQXXct21chMj2d3dy9SrxNmbjSKqZwJ1oWbV/xwK+SHp/5of9mfrnt5idhaAYKH\
-//             CNTX483gGrrgF/Jl2ijXAuUFOOVbOatC2BFdggdBtUi8dERSjMqcT4X8yTHQpi8S\
-//             NzlGvoNGaAWr8Z8TRulUMBUGBiuBBAELAzALBglghkgBZQMEAS0wfjB8MFAwQzEL\
-//             MAkGA1UEBhMCVVMxDTALBgNVBAgMBFV0YWgxDTALBgNVBAoMBEFOU0kxFjAUBgNV\
-//             BAMMDVAtNTIxIFRlc3QgQ0ECCQCyBMK+Pg95BQQo3SDW0678K7IyddDdXAN73jlo\
-//             DP7JB7mZ8VTagOebhEG1EJYcOIKZPTCB3QYJKoZIhvcNAQcBMB0GCWCGSAFlAwQB\
-//             KgQQ+Pdc9DM8dEAnt0SQpkym54CBsA21Tfmo4UkIE8grDbxwgjN5IHLge0Rlb3AA\
-//             Xqk/YyEynUHmYi54ihPkHvs0G3f1Rc9wbOHrvAcXmj51VPn1u+alwPxshIDd9Qxk\
-//             YG52En15gzJCKY7TBehwb2tcgE/R1H3OAAON7FGD8Cm4l0w/qw4SLpGU1q364wwo\
-//             qLjygvE6LPjNLWUV1lx3hK2o8IYYTcSgAEirL8uQGmzabdu0irdvRuzfXzHL8Hzu\
-//             mgw7bgHOoIICYzCCAl8wggHAoAMCAQICCQCyBMK+Pg95AzAKBggqhkjOPQQDAjBD\
-//             MQswCQYDVQQGEwJVUzENMAsGA1UECAwEVXRhaDENMAsGA1UECgwEQU5TSTEWMBQG\
-//             A1UEAwwNUC01MjEgVGVzdCBDQTAeFw0yNTAxMjgxNjA5NTZaFw0zNTAxMjYxNjA5\
-//             NTZaMD8xCzAJBgNVBAYTAlVTMQ0wCwYDVQQIDARVdGFoMRAwDgYDVQQKDAdVdGlt\
-//             YWNvMQ8wDQYDVQQDDAZTaWduZXIwgZswEAYHKoZIzj0CAQYFK4EEACMDgYYABAGE\
-//             Fh88GGzTnp7/2XvPycL6NAb9ox5BeQS39fAIyNyjjpLan0Tjj/QdWO8VlJfoHodi\
-//             UbW6DULsCmUzucL4mu90BQCTD7HNpftl8v4kWGCeEceng/YAmMgvk3BT4fMhNztX\
-//             HqUhPJ/UlN6s48wh3LYvADbPkgITUFPYMtyUwpYbVhz28aNeMFwwCQYDVR0TBAIw\
-//             ADAfBgNVHSMEGDAWgBQHCRN3n5PC9ymWz70j49OX+YnrHDAdBgNVHQ4EFgQUJaUZ\
-//             WVEiH2Pfj4Ez8qWZ9dghxKwwDwYDVR0RBAgwBocEwKgPWTAKBggqhkjOPQQDAgOB\
-//             jAAwgYgCQgFp1USogpENEsNSOOK/e7zYYYFit75ubKlS3yElSfCn7HRgOUvfmOS7\
-//             J1EzaRQizlME0Psx0qX2DApoA3ny7/XSpgJCAKMquLTdHelsBdMJj9A9a64NW+jt\
-//             KU4k8EADEnl417jVZ6UJmnmzNocba+EMFwETNd7XxggbO9kbYY0qE0erYRwmoYIB\
-//             JDCCASAwgYICAQEwCgYIKoZIzj0EAwIwQzELMAkGA1UEBhMCVVMxDTALBgNVBAgM\
-//             BFV0YWgxDTALBgNVBAoMBEFOU0kxFjAUBgNVBAMMDVAtNTIxIFRlc3QgQ0EXDTI1\
-//             MDEyOTE3MzQxMloXDTI2MDEyOTE3MzQxMlqgDjAMMAoGA1UdFAQDAgEBMAoGCCqG\
-//             SM49BAMCA4GMADCBiAJCAcnqme8Z3UgZBBG7Zhh6xl84TsRE2HMnMZQR+z4WjAm7\
-//             mE74zNCiX7khYVQ7I9K+umBgdMm5DuyfU1mjHye7bIOXAkIBqFuUn6sGgFsfGKBI\
-//             sfPfblpjZcmYEwofBC+FyMZKbopz2cZuGVX4euVmZNoWZB2uX0e7TjTn3L2JRZ9A\
-//             wrGHrdcxggHDMIIBvwIBATBQMEMxCzAJBgNVBAYTAlVTMQ0wCwYDVQQIDARVdGFo\
-//             MQ0wCwYDVQQKDARBTlNJMRYwFAYDVQQDDA1QLTUyMSBUZXN0IENBAgkAsgTCvj4P\
-//             eQMwCwYJYIZIAWUDBAIDoIHAMBgGCSqGSIb3DQEJAzELBgkqhkiG9w0BBwEwHAYJ\
-//             KoZIhvcNAQkFMQ8XDTI1MDEyOTE4MjQ0NVowNQYJKoZIhvcNAQcBMSgEJkQwMDM4\
-//             SzFBRDAwTjAyMDBLQzEwMDFBRjMzNTMyNDA0MDIwNlIxME8GCSqGSIb3DQEJBDFC\
-//             BECp3lTZIkdX1wWkBRt+ucWEecHDp6MraqfmQ/XXTDGOKJRaRJ4k4f+OJnLWsrfy\
-//             yL2BvJyHfiTfvyPN49wmI8dZMAoGCCqGSM49BAMEBIGLMIGIAkIBOzZ05vGmTGV7\
-//             2U6q/yMjuG+CWJCZp4H+65kt+dB4ddXjk05AkQncKa8fCnY+ME26peR/EgS7p8rU\
-//             cwfVgE/02DQCQgG95ZGUIE29J9/7xUwDjSYSjgFAvp0n0gAaOceI1VZ3CQN/0Rft\
-//             JZpc0Uo573kHoa9B1ZjT/YbNQXrefBgMXtqlHA==";
-
-// pub const SAMPLE_AWKB2: &str = "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";
-
-// // ECParameters ::= CHOICE {
-// //    namedCurve         OBJECT IDENTIFIER
-// //    -- implicitCurve   NULL
-// //    -- specifiedCurve  SpecifiedECDomain
-// //  }
-// // #[derive(Clone, Debug, Eq, PartialEq, Sequence)] // NOTE: added `Sequence`
-// // struct ECParameters {
-// //     namedCurve: ObjectIdentifier,
-
-// // }
-
-
-// /// Implementation of ECPrivateKey from  container from RFC 5915
-// /// ECPrivateKey ::= SEQUENCE {
-// //      version        INTEGER { ecPrivkeyVer1(1) } (ecPrivkeyVer1),
-// //      privateKey     OCTET STRING,
-// //      parameters [0] ECParameters {{ NamedCurve }} OPTIONAL,
-// //      publicKey  [1] BIT STRING OPTIONAL
-// //    }
-
-// // #[derive(Clone, Debug, Eq, PartialEq, Sequence)] // NOTE: added `Sequence`
-// // struct ECPrivateKey {
-// //     version: u8, // Version 1
-// //     //authsafe: PKCSData,
-// //     //authsafe: cms::content_info::ContentInfo,
-// //     //mac_data: MacData,
-// //     //rr: Box<dyn AnyObject>,
-// //     //modulus: Vec<u8>,
-// //     private_key: OctetString,
-// //     #[asn1(context_specific = "0", tag_mode = "IMPLICIT", optional = "true")]
-// //     parameters: Option<ECParameters>,
-// //     #[asn1(context_specific = "1", tag_mode = "EXPLICIT", optional = "true")]
-// //     public_key: Option<BitString>,
-// // }
-
-// #[cfg(all(feature = "rustcrypto"))]
-// fn get_ca_priv() -> p521::SecretKey 
-// {
-//     let kdh_key_pem = pem::parse(SAMPLE_ROOT_KEY_P12).unwrap();
-//     p521::SecretKey::from_sec1_der(kdh_key_pem.contents()).unwrap()
-// }
-// #[cfg(all(feature = "rustcrypto"))]
-// fn get_kdh_signer_priv() -> p521::SecretKey 
-// {
-//     let kdh_key_pem = pem::parse(SAMPLE_KDH_SIGNER_KEY).unwrap();
-//     p521::SecretKey::from_sec1_der(kdh_key_pem.contents()).unwrap()
-// }
-// #[cfg(all(feature = "rustcrypto"))]
-// fn get_krd_1_priv() -> p521::SecretKey 
-// {
-//     let kdh_key_pem = pem::parse(SAMPLE_KRD_1_KEY).unwrap();
-//     p521::SecretKey::from_sec1_der(kdh_key_pem.contents()).unwrap()
-// }
-// #[cfg(all(feature = "rustcrypto"))]
-// fn get_ca_cert() -> Certificate 
-// {
-//     let kdh_key_pem = pem::parse(SAMPLE_ROOT_CERT).unwrap();
-//     Certificate::from_der(kdh_key_pem.contents()).unwrap()
-// }
-// #[cfg(all(feature = "rustcrypto"))]
-// fn get_kdh_signer_cert() -> Certificate
-// {
-//     let kdh_key_pem = pem::parse(SAMPLE_KDH_SIGNER_CERT2).unwrap();
-//     Certificate::from_der(kdh_key_pem.contents()).unwrap()
-//     // I believe there is a mistake in the PEM formatted cert, the serial number is incorrect
-//     //cert.tbs_certificate.serial_number = cms::cert::x509::serial_number::SerialNumber::new (&hex!("00B204C2BE3E0F7903")).unwrap();
-//     //cert
-
-// }
-// #[cfg(all(feature = "rustcrypto"))]
-// fn get_krd_1_cert() -> cms::cert::x509::Certificate
-// {
-//     let kdh_key_pem = pem::parse(SAMPLE_KRD_1_CERT).unwrap();
-//     Certificate::from_der(kdh_key_pem.contents()).unwrap()
-// }
-
-// #[cfg(all(feature = "rustcrypto"))]
-// #[test]
-// fn decode_ca_priv() {
-//     let kdh_key_pem = pem::parse(SAMPLE_ROOT_KEY_P12).unwrap();
-
-//     let root_priv_key = EcPrivateKey::from_der ( kdh_key_pem.contents()).unwrap();
-
-//     //println! ( "root_priv_key={:02X?}", root_priv_key);
-
-//     // assert! ( root_priv_key.version == 1);
-//     assert_eq! ( root_priv_key.private_key.len(), 66);
-//     assert_eq! ( root_priv_key.parameters, Some(EcParameters::NamedCurve(SECP_521_R_1)) );
-//     assert_eq! ( root_priv_key.public_key.unwrap().len(), 133);
-
-//     //let private_key = elliptic_curve::SecretKey::<NistP521>::from_sec1_der(kdh_key_pem.contents()).unwrap();
-
-//     let private_key = elliptic_curve::SecretKey::<NistP521>::from_sec1_der(kdh_key_pem.contents()).unwrap();
-    
-//     println! ( "private_key={:02X?}", private_key);
-
-//     // println! ( "private_key={:02X?}", root_priv_key.private_key);
-//     // println! ( "ec_params={:02X?}", root_priv_key.parameters);
-//     //println! ( "public_key={:02X?}", root_priv_key.public_key);
-// }
-// #[test]
-// #[cfg(all(feature = "rustcrypto"))]
-// fn decode_ca_cert() {
-//     let kdh_key_pem = pem::parse(SAMPLE_ROOT_CERT).unwrap();
-
-//     let root_cert = Certificate::from_der( kdh_key_pem.contents()).unwrap();
-    
-//     let priv_key = get_ca_priv();
-//     let pub_key = priv_key.public_key();
-
-//     assert_eq! ( pub_key.to_sec1_bytes().as_ref(), root_cert.tbs_certificate.subject_public_key_info.subject_public_key.as_bytes().unwrap());
-//     assert_eq! ( root_cert.tbs_certificate.issuer, root_cert.tbs_certificate.subject); // Self signed
-
-// }
-
-// #[test]
-// #[cfg(all(feature = "rustcrypto"))]
-// fn decode_kdh_priv() {
-//     let kdh_key_pem = pem::parse(SAMPLE_KDH_SIGNER_KEY).unwrap();
-
-//     let kdh_signing_key = EcPrivateKey::from_der ( kdh_key_pem.contents()).unwrap();
-
-//     //println! ( "root_priv_key={:02X?}", root_priv_key);
-
-//     // assert! ( root_priv_key.version == 1);
-//     assert_eq! ( kdh_signing_key.private_key.len(), 66);
-//     assert_eq! ( kdh_signing_key.parameters, Some(EcParameters::NamedCurve(SECP_521_R_1)) );
-//     assert_eq! ( kdh_signing_key.public_key.unwrap().len(), 133);
-
-//     // println! ( "private_key={:02X?}", root_priv_key.private_key);
-//     // println! ( "ec_params={:02X?}", root_priv_key.parameters);
-//     //println! ( "public_key={:02X?}", root_priv_key.public_key);
-// }
-// #[test]
-// #[cfg(all(feature = "rustcrypto"))]
-// fn decode_kdh_cert() {
-//     let kdh_key_pem = pem::parse(SAMPLE_KDH_SIGNER_CERT2).unwrap();
-
-//     let kdh_signing_cert = cms::cert::x509::Certificate::from_der( kdh_key_pem.contents()).unwrap();
-    
-//     let priv_key = get_kdh_signer_priv();
-//     let pub_key = priv_key.public_key();
-
-//     assert_eq! ( pub_key.to_sec1_bytes().as_ref(), kdh_signing_cert.tbs_certificate.subject_public_key_info.subject_public_key.as_bytes().unwrap()); // matches the public key associated with the private key
-//     assert_eq! ( kdh_signing_cert.tbs_certificate.issuer, get_ca_cert().tbs_certificate.subject); // Signed by root ca
-// }
-
-
-// #[test]
-// #[cfg(all(feature = "rustcrypto"))]
-// fn decode_krd_1_priv() {
-//     let kdh_key_pem = pem::parse(SAMPLE_KRD_1_KEY).unwrap();
-    
-//     let kdh_priv_rust_crypto = p521::SecretKey::from_sec1_pem(SAMPLE_KRD_1_KEY).unwrap();
-
-//     let kdh_private_asn1 = EcPrivateKey::from_der ( kdh_key_pem.contents()).unwrap();
-//     assert_eq! ( kdh_private_asn1.private_key, kdh_priv_rust_crypto.to_bytes().as_slice());
-//     assert_eq! ( kdh_private_asn1.parameters, Some(EcParameters::NamedCurve(SECP_521_R_1)) );
-//     assert_eq! ( *kdh_private_asn1.public_key.unwrap(), *kdh_priv_rust_crypto.public_key().to_sec1_bytes());
-
-// }
-
-// #[test]
-// #[cfg(all(feature = "rustcrypto"))]
-// fn decode_krd_1_cert() {
-//     let kdh_key_pem = pem::parse(SAMPLE_KRD_1_CERT).unwrap();
-
-//     let kdh_key = Certificate::from_der( kdh_key_pem.contents()).unwrap();
-    
-//     let priv_key = get_krd_1_priv();
-//     let pub_key = priv_key.public_key();
-
-//     assert_eq! ( pub_key.to_sec1_bytes().as_ref(), kdh_key.tbs_certificate.subject_public_key_info.subject_public_key.as_bytes().unwrap());
-//     assert_eq! ( kdh_key.tbs_certificate.issuer, get_ca_cert().tbs_certificate.subject); // Signed by root ca
-// }
-
-// #[derive(Clone, Debug, Eq, PartialEq, der::Sequence )]
-// #[cfg(all(feature = "rustcrypto"))]
-// pub struct TR34Block {
-//     pub version: cms::content_info::CmsVersion,
-//     pub issuer_and_serial_number: cms::cert::IssuerAndSerialNumber,
-//     pub clear_key: der::asn1::OctetString,
-//     //pub attribute_header: OidAndAttributeHeader,
-//     //pub attribute_header: cms::cert::x509::attr::Attribute,
-//     pub attribute_header: OctetString,
-// }
-
-// #[test]
-// #[cfg(all(feature = "rustcrypto"))]
-// fn decode_awk() -> Result<(), der::Error>{
-//     let awkb = base64::engine::general_purpose::STANDARD.decode(SAMPLE_AWKB2).unwrap();
-
-//     let cms = cms::content_info::ContentInfo::from_der(&awkb).unwrap();
-//     assert_eq! ( cms.content_type, ID_SIGNED_DATA);
-
-//     let signed_data= cms.content.decode_as::<cms::signed_data::SignedData>().unwrap();
-//     assert_eq!( signed_data.version, CmsVersion::V1);
-//     assert_eq!( signed_data.digest_algorithms, SetOfVec::try_from(vec![AlgorithmIdentifierOwned{oid: ID_SHA_512, parameters: None}]).unwrap() );
-//     assert_eq!( signed_data.crls.unwrap().0.len(), 1); // One certificate in CRL
-//     assert_eq! ( signed_data.certificates.as_ref().unwrap().0.len(), 1);
-
-//     if let Some(cms::cert::CertificateChoices::Certificate(cert)) = signed_data.certificates.unwrap().0.get(0) {
-//         assert_eq!( cert.tbs_certificate, get_kdh_signer_cert().tbs_certificate);
-//         assert_eq!( cert.signature_algorithm, AlgorithmIdentifier{oid:ECDSA_WITH_SHA_256, parameters: None });
-//     } else { panic!("no regular certificate") };
-
-//     if let Some(signer_info) = signed_data.signer_infos.0.get(0)
-//     {
-//         assert_eq! ( signer_info.version, cms::content_info::CmsVersion::V1);
-//         assert_eq! ( signer_info.sid, cms::signed_data::SignerIdentifier::IssuerAndSerialNumber(IssuerAndSerialNumber { issuer: get_kdh_signer_cert().tbs_certificate.issuer, serial_number: get_kdh_signer_cert().tbs_certificate.serial_number }));
-//         assert_eq! ( signer_info.digest_alg, AlgorithmIdentifierOwned{oid: ID_SHA_512, parameters: None});
-//         assert_eq! ( signer_info.signature_algorithm, AlgorithmIdentifierOwned{oid: ECDSA_WITH_SHA_512, parameters: None});
-//         assert_eq! ( signer_info.unsigned_attrs, None);
-        
-//         if let Some(signed_attrs) = &signer_info.signed_attrs {
-//             assert_eq! ( signed_attrs.len(), 4);
-//             assert_eq! ( signed_attrs.get(0), Some(&Attribute { oid: ID_CONTENT_TYPE, values: SetOfVec::try_from(vec![Any::encode_from(&ID_DATA).unwrap()]).unwrap()}));
-//             let signing_time = &UtcTime::from_date_time(DateTime::new(2025,1,29,18,24,45).unwrap()).unwrap();
-//             assert_eq!( signed_attrs.get(1), Some(&Attribute { oid: ID_SIGNING_TIME, values: SetOfVec::try_from(vec![Any::encode_from(signing_time).unwrap()]).unwrap()}));
-//             let key_block_header = OctetString::new(b"D0038K1AD00N0200KC1001AF335324040206R1").unwrap();
-//             assert_eq! ( signed_attrs.get(2), Some(&Attribute { oid: ID_DATA, values: SetOfVec::try_from(vec![Any::encode_from(&key_block_header).unwrap()]).unwrap()}));
-//             //let hash = OctetString::new(hex!("A9DE54D9224757D705A4051B7EB9C58479C1C3A7A32B6AA7E643F5D74C318E28945A449E24E1FF8E2672D6B2B7F2C8BD81BC9C877E24DFBF23CDE3DC2623C759").to_vec()).unwrap();
-//             let mut calc_dig = openssl::sha::Sha512::new();
-//             calc_dig.update(signed_data.encap_content_info.econtent.as_ref().unwrap().value());
-//             let calc_dig_out = calc_dig.finish();
-//             assert_eq!( signed_attrs.get(3), Some(&Attribute { oid: ID_MESSAGE_DIGEST, values: SetOfVec::try_from(vec![Any::encode_from(&OctetString::new(calc_dig_out).unwrap()).unwrap()]).unwrap()}));
-//         } else { panic! ( "missing attributes")};
-
-//         let signed_attrs_der = signer_info.signed_attrs.to_der().unwrap();
-//         let verifying_key = p521::ecdsa::VerifyingKey::from_sec1_bytes(get_kdh_signer_cert().tbs_certificate.subject_public_key_info.subject_public_key.as_bytes().unwrap()).unwrap();
-//         let signature = p521::ecdsa::Signature::from_der(signer_info.signature.as_bytes()).unwrap();
-//         assert!(verifying_key.verify(&signed_attrs_der, &signature ).is_ok()); 
-
-//         assert_eq! ( signer_info.signature.as_bytes().len(), 139);
-
-//     } else { panic! ( "Missing signer info")}
-    
-//     assert_eq! ( signed_data.encap_content_info.econtent_type, ID_DATA);
-//     decode_inner_awk(signed_data.encap_content_info.econtent.unwrap().value())
-// }
-
-// #[cfg(all(feature = "rustcrypto"))]
-// fn decode_inner_awk ( inner_der: &[u8]) -> Result<(), der::Error>
-// {
-//     //let inner_content = cms::content_info::ContentInfo::from_der ( inner_octetstring.as_bytes()).unwrap();
-//     let inner_content = cms::content_info::ContentInfo::from_der (inner_der).unwrap();
-        
-//     assert_eq! ( inner_content.content_type, ID_ENVELOPED_DATA);
-//     let enveloped_data = inner_content.content.decode_as::<cms::enveloped_data::EnvelopedData>()?;
-
-//     assert_eq! ( enveloped_data.version, cms::content_info::CmsVersion::V2);
-//     assert_eq! ( enveloped_data.originator_info, None);
-//     assert_eq! ( enveloped_data.unprotected_attrs, None);
-
-//     assert_eq! ( enveloped_data.recip_infos.0.len(), 1);
-//     // Parse recipient infos and recover content encryption key
-//     let cek = if let Some(Kari(key_agree_recip_info)) = enveloped_data.recip_infos.0.get(0) 
-//     {
-//         assert_eq! ( key_agree_recip_info.version, cms::content_info::CmsVersion::V3);
-//         assert_eq! ( key_agree_recip_info.ukm, None);
-//         assert_eq! ( key_agree_recip_info.key_enc_alg, AlgorithmIdentifierOwned{oid: DH_SINGLE_PASS_STD_DH_SHA512KDF_SCHEME, parameters: Some(Any::encode_from(&AlgorithmIdentifierOwned{oid: ID_AES_256_WRAP, parameters: None}).unwrap()) });
-    
-//         let encapsulated_kek = {
-//             let OriginatorKey(originator_key) = &key_agree_recip_info.originator else { panic! ( "missing originator key")};
-//             assert_eq! (originator_key.algorithm, AlgorithmIdentifierOwned{oid: ID_EC_PUBLIC_KEY, parameters: None} );
-//             originator_key.public_key.as_bytes().unwrap()
-//         };
-
-//         // Should only be one recipient key only
-//         assert_eq! ( key_agree_recip_info.recipient_enc_keys.len(), 1);
-//         let encrypted_cek = if let Some(recipient_enc_key) =  key_agree_recip_info.recipient_enc_keys.get(0) {
-//             if let KeyAgreeRecipientIdentifier::IssuerAndSerialNumber(rid) = &recipient_enc_key.rid {
-//                 assert_eq! ( rid.issuer, get_krd_1_cert().tbs_certificate.issuer);
-//                 assert_eq! ( rid.serial_number, get_krd_1_cert().tbs_certificate.serial_number);
-//             } else { panic!("unmatched enum") };
-//             recipient_enc_key.enc_key.as_bytes()
-//         } else { panic! ( "Missing recipient")};
-
-//         // Decapsulate key encrypting key
-//         let mut decapsulator = DhSinglePassStdDhSha512KdfScheme::<_,U32>::new_decapsulator(get_krd_1_priv());
-//         let ecc_shared_info = EccCmsSharedInfo{ key_info: AlgorithmIdentifierOwned { oid: ID_AES_256_WRAP, parameters: None }, entity_uinfo: key_agree_recip_info.ukm.clone(), supp_pub_info: OctetString::new(256u32.to_be_bytes()).unwrap() };
-//         decapsulator.set_kdf(EcCombinerX963::new_with_salt(&ecc_shared_info.to_der().unwrap()));
-
-//         let kek = decapsulator.decapsulate(&GenericArray::from_slice(encapsulated_kek)).unwrap();
-//         let decryptor = AesKw::<Aes256>::new(&kek);
-        
-//         // Decrypt content encryption key
-//         decryptor.unwrap_fixed_key::<U32>(&Array::try_from(encrypted_cek).unwrap()).unwrap()
-//     } else {panic! ( "missing recip_info")};
-
-//     // Decrypt content
-//     let tr34block = {
-//         let encrypted_content = enveloped_data.encrypted_content;
-        
-//         assert_eq! ( encrypted_content.content_type, ID_DATA);
-//         assert_eq! ( encrypted_content.content_enc_alg, AlgorithmIdentifierOwned{oid: ID_AES_256_CBC, parameters: Some(Any::encode_from(&OctetString::new(hex!("F8F75CF4333C744027B74490A64CA6E7").to_vec()).unwrap())?)});
-        
-//         let decryptor3 = cbc::Decryptor::<Aes256>::new(&cek, &Array::try_from(encrypted_content.content_enc_alg.parameters.unwrap().value()).unwrap());
-//         let plaintext = decryptor3.decrypt_padded_vec::<cipher::inout::block_padding::Pkcs7>(encrypted_content.encrypted_content.unwrap().as_bytes()).unwrap();
-//         //assert! ( plaintext == b"Hello World\r\n" );
-//         TR34Block::from_der(&plaintext).unwrap()
-//     };
-
-//     assert_eq!( tr34block.version, CmsVersion::V0);
-//     assert_eq!( tr34block.issuer_and_serial_number.issuer, get_ca_cert().tbs_certificate.subject);
-//     assert_eq!( tr34block.issuer_and_serial_number.serial_number, get_kdh_signer_cert().tbs_certificate.serial_number);
-//     assert_eq!( tr34block.attribute_header.as_bytes(), b"D0038K1AD00N0200KC1001AF335324040206R1");
-//     assert_eq!( tr34block.clear_key.as_bytes(), &hex!("CE5785F04D52B36CC35855451C183A3365FD7361A918A2195CC6F8682C21B996"));
-
-//     Ok(())
-// }

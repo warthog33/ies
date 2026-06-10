@@ -13,22 +13,20 @@ use kems::{Capsulator, OsRng, SetKdf, EncapsulateDeterministic2};
 
 use kems::eckem::{EcdhKemUncompressed, SeedAsScalar};
 use kems::kem_with_kdf::{JwaKdf, CombinerNoKeys, KemWithKdf};
-#[cfg(all(feature = "rustcrypto-p256", feature="rustcrypto-p384", feature="rustcrypto-sha2"))]
 use kems::jwe::{JweKemP256Sha256, JweKemP384Sha256};
-#[cfg(all(feature="rustcrypto-rsa"))]
 use kems::rsakem::{RsaPkcs15Kem, RsaOaepKem};
-use kems::generic_array::GenericArray;   
+use kems::generic_array::GenericArray;
 
 use ml_kem::kem::{Decapsulate};
 use p256::NistP256;
 use p384::NistP384;
 use rsa::{RsaPrivateKey, RsaPublicKey, BoxedUint};
 use serde_json::Value;
-//use sha1::Sha1;
+
+use sha1::Sha1;
 use sha2::Sha256;
 
 mod common;
-//use common::PredictableRng;
 
 
 #[test]
@@ -44,10 +42,6 @@ fn test_rfc_7518_appendix_c_ec_es (){
     //    agreement computation.  Alice’s ephemeral key (in JWK format) used
     //    for the key agreement computation in this example (including the
     //    private part) is:
-
-    
-
-    
     let alice_priv_jwk = r#"
             {"kty":"EC",
             "crv":"P-256",
@@ -161,7 +155,7 @@ fn test_rfc_7518_appendix_c_ec_es (){
 
     let jwa_kdf_send =  JwaKdf::<ConcatKdf<Sha256>,true>::new(b"A128GCM", b"Alice", b"Bob");
     //let mut encapsulator = EcdhEncapsulatorUncompressed::<NistP256,_,U16>::from_key(bob_public_key); //::new(jwa_kdf_send);
-    let mut encapsulator = KemWithKdf::<EcdhKemUncompressed::<NistP256,SeedAsScalar>,CombinerNoKeys,_,U16>::new_encapsulator(bob_public_key); //::new(jwa_kdf_send);
+    let mut encapsulator = KemWithKdf::<EcdhKemUncompressed::<NistP256,SeedAsScalar>,CombinerNoKeys,_,U16>::from_public_key(bob_public_key); //::new(jwa_kdf_send);
     encapsulator.set_kdf(jwa_kdf_send);
     //let (c0_send, k_send) = encapsulator.encapsulate(&mut pred_rng).unwrap();
     let (c0_send, k_send) = encapsulator.encapsulate_deterministic(&alice_eph_bytes).unwrap();
@@ -175,11 +169,13 @@ fn test_rfc_7518_appendix_c_ec_es (){
 
     let jwa_kdf_recv = JwaKdf::<ConcatKdf<Sha256>,true>::new(b"A128GCM", b"Alice", b"Bob");
     //let mut decapsulator = EcdhDecapsulatorUncompressed::<_,_,U16>::from_key(bob_secret_key);
-    let mut decapsulator = KemWithKdf::<EcdhKemUncompressed::<NistP256,SeedAsScalar>,CombinerNoKeys,JwaKdf::<ConcatKdf<Sha256>,true>,U16>::new_decapsulator(bob_secret_key);
+    let mut decapsulator = KemWithKdf::<EcdhKemUncompressed::<NistP256,SeedAsScalar>,CombinerNoKeys,JwaKdf::<ConcatKdf<Sha256>,true>,U16>::from_private_key(bob_secret_key);
     decapsulator.set_kdf(jwa_kdf_recv);
     let k_recv = decapsulator.decapsulate(&c0_send).unwrap();
 
     assert! ( k_recv == derived_key);
+
+
 
 }
 
@@ -192,9 +188,6 @@ fn test_rfc_7518_appendix_c_ec_es (){
 /// 
 #[test]
 fn test_rfc_7520_5_5_ecies () {
-    use kems::EncapsulateDeterministic2;
-
-    
     let recip_jwk = r#"{
         "kty": "EC",
         "crv": "P-256",
@@ -274,7 +267,7 @@ fn test_rfc_7520_5_5_ecies () {
 
     //let encapsulator = EcdhEncapsulatorUncompressed::<NistP256,_,U32>::new(jwa_kdf);
     //let mut encapsulator = EcdhEncapsulatorUncompressed::from_key(recip_pub);
-    let mut encapsulator = JweKemP256Sha256::new_encapsulator(recip_pub);
+    let mut encapsulator = JweKemP256Sha256::from_public_key(recip_pub);
     encapsulator.set_kdf(jwa_kdf);
 
     
@@ -320,7 +313,7 @@ fn test_rfc_7520_5_5_ecies () {
     // Decrypt using Ecies 
     let jwa_kdf =  JwaKdf::<ConcatKdf<sha2::Sha256>,true>::new(b"A128CBC-HS256", b"", b"");
     //let mut decapsulator = EcdhDecapsulator::<_,_,U32,_>::from_key(recip_prv.clone());
-    let mut decapsulator = JweKemP256Sha256::new_decapsulator(recip_prv.clone());
+    let mut decapsulator = JweKemP256Sha256::from_private_key(recip_prv.clone());
     decapsulator.set_kdf(jwa_kdf);
 
     let mut hybrid_decryptor = EciesJweA128CbcHs256::from_decapsulator(decapsulator);
@@ -338,8 +331,6 @@ fn test_rfc_7520_5_5_ecies () {
 #[test]
 #[allow(non_snake_case, unused)]
 fn test_rfc_7520_5_13_ecies_and_rsa () {
-    use kems::EncapsulateDeterministic2;
-
     let cek_base64 = "zXayeJ4gvm8NJr3IUInyokTUO-LbQNKEhe_zWlYbdpQ";
     
     let rsa_private_jwk = r#"{
@@ -467,7 +458,7 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
     let rsa_private = RsaPrivateKey::from_p_q(p, q, e).unwrap();
     let rsa_public = RsaPublicKey::from(rsa_private.clone());
 
-    let decap = RsaPkcs15Kem::<U256, U32>::new_decapsulator(rsa_private.clone());
+    let decap = RsaPkcs15Kem::<U256, U32>::from_private_key(rsa_private.clone());
     //let c0: RsaEncapKey<U256,U32> = RsaEncapKey::from_bytes(GenericArray::from_slice(rsa_encrypted_key.as_ref())).unwrap();
     let c0 = GenericArray::from_slice(rsa_encrypted_key.as_ref());
     //let cek_calc = decap.try_decap(&c0).unwrap();
@@ -505,7 +496,7 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
 
     let jwa_kdf =  JwaKdf::<ConcatKdf<Sha256>,true>::new(b"ECDH-ES+A256KW", b"", b"");
     //let mut ec_decapsulator = EcdhDecapsulator::<_,_,U32,EcUncompressedEncoder<_>>::from_key(recip_prv2.clone());
-    let mut ec_decapsulator = JweKemP384Sha256::new_decapsulator(recip_prv2.clone());
+    let mut ec_decapsulator = JweKemP384Sha256::from_private_key(recip_prv2.clone());
     ec_decapsulator.set_kdf(jwa_kdf);
   
     //let kek_calc_ec = ec_decapsulator.try_decap(&c0_ec).unwrap();
@@ -538,7 +529,7 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
     let jwa_kdf2 =  JwaKdf::<ConcatKdf<Sha256>,true>::new(b"ECDH-ES+A256KW", b"", b"");
     //let ec_encryptor = EcdhEncapsulatorUncompressed::<_,_,U32>::new(jwa_kdf2);
     //let mut ec_encryptor = EcdhEncapsulatorUncompressed::<_,_,U32>::from_key(recip_prv2.public_key());
-    let mut ec_encryptor = JweKemP384Sha256::new_encapsulator(recip_prv2.public_key());
+    let mut ec_encryptor = JweKemP384Sha256::from_public_key(recip_prv2.public_key());
     
     ec_encryptor.set_kdf(jwa_kdf2);
     let ephem_key_priv_bytes = &ephem_key.to_bytes();
@@ -574,7 +565,7 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
     // Decrypt using ECIES structures
     let jwa_kdf =  JwaKdf::<ConcatKdf<Sha256>,true>::new(b"ECDH-ES+A256KW", b"", b"");
     //let mut decapsulator = EcdhDecapsulator::<_,_,U32,_>::from_key(recip_prv2.clone());
-    let mut decapsulator = JweKemP384Sha256::new_decapsulator(recip_prv2.clone());
+    let mut decapsulator = JweKemP384Sha256::from_private_key(recip_prv2.clone());
     
     decapsulator.set_kdf(jwa_kdf);
     let mut decryptor = EciesA256KwJweA128CbcHs256::from_decapsulator(decapsulator);
@@ -587,7 +578,7 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
     // Encrypt using ECIES 
     let jwa_kdf =  JwaKdf::<ConcatKdf<Sha256>,true>::new(b"ECDH-ES+A256KW", b"", b"");
     //let mut encapsulator = EcdhEncapsulatorUncompressed::<_,_,U32>::from_key(recip_prv2.public_key());
-    let mut encapsulator = JweKemP384Sha256::new_encapsulator(recip_prv2.public_key());
+    let mut encapsulator = JweKemP384Sha256::from_public_key(recip_prv2.public_key());
     encapsulator.set_kdf(jwa_kdf);
     let mut encryptor = EciesA256KwJweA128CbcHs256::from_encapsulator(encapsulator);
     //encryptor.set_iv(&iv);
@@ -608,8 +599,6 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
 #[test]
 #[allow(non_snake_case, unused)]
 fn test_rfc_7516_a_1_rsaies () {
-   
-   
     let rsa_key = r#"{
     "kty": "RSA",
     "n": "oahUIoWw0K0usKNuOR6H4wkf4oBUXHTxRvgb48E-BVvxkeDNjbC4he8rUW
@@ -712,9 +701,7 @@ fn test_rfc_7516_a_1_rsaies () {
     assert!( protected_header.as_bytes() == &BASE64_URL_SAFE_NO_PAD.decode(protected_header_base64).unwrap());
 
     /// Start with decryption of the CEK
-    let decap = RsaOaepKem::<U256,U32,sha1::Sha1,sha1::Sha1>::new_decapsulator(rsa_private.clone());
-    //let c0 = RsaEncapKey::from_bytes(&encrypted_cek.into()).unwrap();
-    //let cek_calc = decap.try_decap(&c0).unwrap();
+    let decap = RsaOaepKem::<U256,U32,Sha1,Sha1>::from_private_key(rsa_private.clone());
     let c0 = GenericArray::from_slice(&encrypted_cek);
     let cek_calc = decap.decapsulate(&c0).unwrap();
 
@@ -725,7 +712,6 @@ fn test_rfc_7516_a_1_rsaies () {
     
     let mut buffer = ciphertext.to_vec();
     buffer.extend_from_slice(&tag);
-    //decryptor.decrypt_in_place_detached(&iv.into(), &aad, &mut buffer, &tag.into() ).unwrap();
     decryptor.decrypt_in_place(&iv.into(), &aad, &mut buffer ).unwrap();
     
     assert! ( buffer == plaintext);
@@ -735,7 +721,6 @@ fn test_rfc_7516_a_1_rsaies () {
     decryptor.set_iv(iv.into());
     
     let pt1 = decryptor.try_open_detached(&c0, Payload{msg: &ciphertext, aad: &aad}, &tag.into()).unwrap();
-
     assert! ( pt1 == &plaintext);
 
     let mut encryptor = RsaesOaepJweA256Gcm::from_key_encap(rsa_private.to_public_key());
@@ -846,9 +831,7 @@ fn test_rfc_7516_a_2_rsaies () {
 
 
     /// Start with decryption of the cek
-    let decap = RsaPkcs15Kem::<U256,U32>::new_decapsulator(rsa_private.clone());
-    // let c0 = RsaEncapKey::from_bytes(&encrypted_cek.into()).unwrap();
-    // let cek_calc = decap.try_decap(&c0).unwrap();
+    let decap = RsaPkcs15Kem::<U256,U32>::from_private_key(rsa_private.clone());
     let c0 = GenericArray::from_slice(&encrypted_cek);
     let cek_calc = decap.decapsulate(&c0).unwrap();
 

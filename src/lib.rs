@@ -40,7 +40,7 @@ use cipher::{Array, BlockCipherDecrypt, BlockCipherEncrypt, BlockSizeUser, KeySi
 //use generic_array::{GenericArray, ArrayLength};
 
 use kdfs::hybrid_array::ArraySize;
-use kems::{Decapsulate, Encapsulate, EncapsulateDeterministic2, EncapsulateWithKeyWrapDeterministic};
+use kems::{Decapsulate, Encapsulate, EncapsulateDeterministic2, EncapsulateWithKeyWrapDeterministic, EncodedSizeUser2};
 use kems::{Capsulator, DecapsulateWithKeyWrap, EncapsulateWithKeyWrap, FromKey, GenerateCapsulatorFromSeed, SetKdf, generic_array::typenum::{NonZero, Sum}};
 use kems::generic_array::{GenericArray, ArrayLength};
 //use typenum::{NonZero, Sum, Unsigned, Zero, U8};
@@ -172,6 +172,18 @@ pub trait Ies<C: Capsulator>
     {
         //return SimpleIes{ encapsulator: EncapOrDecap::Encap(C::Encapsulator::from_key(key)), phantom1: PhantomData, iv: Array::default()}
         Self::Encryptor::from_key(C::Encapsulator::from_key(key))
+    }
+    fn from_bytes_decap ( private_bytes: &GenericArray::<u8, <<C as Capsulator>::Decapsulator as EncodedSizeUser2>::EncodedSize> ) -> Self::Decryptor
+    where <C as Capsulator>::Decapsulator: EncodedSizeUser2,
+    {
+        Self::Decryptor::from_key(<<C as Capsulator>::Decapsulator as EncodedSizeUser2>::from_bytes(private_bytes))
+    }
+    fn from_bytes_encap (public_bytes: &GenericArray::<u8, <<C as Capsulator>::Encapsulator as EncodedSizeUser2>::EncodedSize>) -> Self::Encryptor
+    where <C as Capsulator>::Encapsulator: EncodedSizeUser2
+    {
+        //return SimpleIes{ encapsulator: EncapOrDecap::Encap(C::Encapsulator::from_key(key)), phantom1: PhantomData, iv: Array::default()}
+        //Self::Encryptor::from_key(C::Encapsulator::from_key(key))
+        Self::Encryptor::from_key(<<C as Capsulator>::Encapsulator as EncodedSizeUser2>::from_bytes(public_bytes))
     }
     fn from_encapsulator (encapsulator: C::Encapsulator) -> Self::Encryptor
     {

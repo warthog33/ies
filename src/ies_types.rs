@@ -30,7 +30,7 @@ use crate::hash_encrypt::HashEncryption;
 #[allow(unused)]
 use kems::generic_array::typenum::consts::*;
 
-pub type AppleKdf<H> = kdfs::ansi_x9_63::X963Kdf<H>;
+pub type X963Kdf<H> = kdfs::ansi_x9_63::X963Kdf<H>;
 
 #[cfg(feature = "rustcrypto-aes")]
 use aes_gcm::{AesGcm,Aes256Gcm,aes::{Aes128, Aes256}};
@@ -47,47 +47,47 @@ use kems::eckem::SeedAsScalar;
 /// Implementation of Apple's eciesEncryptionStandardX963SHA1AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-1 implementation and AES-128 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha1", feature="rustcrypto-aes"))]
-pub type EciesStandardX963SHA1AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, AppleKdf<Sha1>, U16>, AesGcm<Aes128,U16,U16>>;
+pub type EciesStandardX963SHA1AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha1>, U16>, AesGcm<Aes128,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardX963SHA224AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-256 implementation and AES-128 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardX963SHA224AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, AppleKdf<Sha224>, U16>, AesGcm<Aes128,U16,U16>>;
+pub type EciesStandardX963SHA224AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha224>, U16>, AesGcm<Aes128,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardX963SHA256AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-256 implementation and AES-128 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardX963SHA256AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, AppleKdf<Sha256>, U16>, AesGcm<Aes128,U16,U16>>;
+pub type EciesStandardX963SHA256AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha256>, U16>, AesGcm<Aes128,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardX963SHA384AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-384 implementation and AES-256 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardX963SHA384AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, AppleKdf<Sha384>, U32>, AesGcm<Aes256,U16,U16>>;
+pub type EciesStandardX963SHA384AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha384>, U32>, AesGcm<Aes256,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardX963SHA512AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-384 implementation and AES-256 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardX963SHA512AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, AppleKdf<Sha512>, U32>, AesGcm<Aes256,U16,U16>>;
+pub type EciesStandardX963SHA512AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha512>, U32>, AesGcm<Aes256,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardVariableIVX963SHA224AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-224 implementation and AES-128 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardVariableIVX963SHA224AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, AppleKdf<Sha224>, U32>, AesGcm<Aes128,U16,U16>>;
+pub type EciesStandardVariableIVX963SHA224AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha224>, U32>, AesGcm<Aes128,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardVariableIVX963SHA256AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-256 implementation and AES-128 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardVariableIVX963SHA256AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, AppleKdf<Sha256>, U32>, AesGcm<Aes128,U16,U16>>;
+pub type EciesStandardVariableIVX963SHA256AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha256>, U32>, AesGcm<Aes128,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardVariableIVX963SHA384AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-384 implementation and AES-256 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardVariableIVX963SHA384AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C, SeedAsScalar>, CombinerEphemOnly, AppleKdf<Sha384>, U48>, AesGcm<Aes256,U16,U16>>;
+pub type EciesStandardVariableIVX963SHA384AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C, SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha384>, U48>, AesGcm<Aes256,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardVariableIVX963SHA512AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-512 implementation and AES-256 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardVariableIVX963SHA512AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C, SeedAsScalar>, CombinerEphemOnly, AppleKdf<Sha512>, U48>, AesGcm<Aes256,U16,U16>>;
+pub type EciesStandardVariableIVX963SHA512AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C, SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha512>, U48>, AesGcm<Aes256,U16,U16>>;
 
 /// Implementation of Apple's rsaEncryptionOAEPSHA1AESGCM cipher
 /// The method uses RSA OAEP to encrypt an ephemeral AES-128 key. SHA-1 is used for both hashing and the mask generation function. The IV used in AES GCM is 16 bytes of zeros.
