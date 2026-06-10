@@ -1,0 +1,41 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Main App
+      uses: actions/checkout@v4
+      with:
+        path: main-app
+
+    - name: Checkout KDFs
+      uses: actions/checkout@v4
+      with:
+        repository: warthog33/kdfs
+        path: kdfs
+
+    - name: Checkout KEMs
+      uses: actions/checkout@v4
+      with:
+        repository: warthog33/kems
+        path: kems
+        
+    - name: Build
+      working-directory: ./main-app
+      run: cargo build --verbose
+      
+    - name: Run tests
+      working-directory: ./main-app
+      run: cargo test --verbose
