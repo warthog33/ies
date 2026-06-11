@@ -1,7 +1,5 @@
 use aead::consts::{U12, U16, U24, U32, U128, U256, U384};
 use aead::{KeyInit, AeadInOut};
-
-
 use aes::{Aes128, Aes192, Aes256};
 use aes_gcm::AesGcm;
 use aes_kw::{KwAes128, KwAes256};
