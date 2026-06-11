@@ -545,7 +545,7 @@ fn test_cms_p384_decrypt() -> Result<(), common::Error>
         -----END CMS-----";
     let plaintext = b"Hello World\r\n";
 
-    let priv_p256 = elliptic_curve::SecretKey::<NistP256>::from_sec1_pem(priv_key_pem)?;
+    let priv_p256 = elliptic_curve::SecretKey::<NistP256>::from_sec1_pem(priv_key_pem).unwrap();
 
     // let binding = pem::parse(cms).unwrap();
     // let cms_der = binding.contents();
