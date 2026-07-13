@@ -19,9 +19,11 @@ use kems::jwe::JweKemEcSha256;
 use kems::kem_with_kdf::{CombinerEphemOnly, CombinerAllPubKeys, CombinerNoKeys, JwaKdf, KemWithKdf};
 #[cfg(feature="rustcrypto-rsa")]
 use kems::rsakem::{Oaep2, RsaKem};
-#[allow(unused)]
+#[cfg(feature="rustcrypto-x25519")]
 use kems::x25519kem::X25519Capsulator;
+#[cfg(feature="rustcrypto-p256")]
 use p256::NistP256;
+#[cfg(feature="rustcrypto-p384")]
 use p384::NistP384;
 #[cfg(all(feature = "rustcrypto-rsa"))]
 use rsa::Pkcs1v15Encrypt;
@@ -146,7 +148,9 @@ pub type EciesJweP256A128CbcHs256<'a> = EciesJweA128CbcHs256<'a,NistP256>;
 //pub type EciesA256KwJweA128CbcHs256<'a,C> = IesWithKeyWrap::<KemWithKdf<EcdhKemRaw::<C,kems::eckem::SeedAsScalar>, CombinerNoKeys, JwaKdf<'a,ConcatKdf<Sha256>,true>, U32>, Aes256, A128CbcHS256>;
 pub type EciesA256KwJweA128CbcHs256<'a,C> = IesWithKeyWrap::<JweKemEcSha256<'a,C,U32>, Aes256, A128CbcHS256>;
 
+#[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-cbc", feature="rustcrypto-hmac"))]
 pub type EciesP256A256KwJweA128CbcHs256<'a> = EciesA256KwJweA128CbcHs256<'a,NistP256>;
+#[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-cbc", feature="rustcrypto-hmac"))]
 pub type EciesP384A256KwJweA128CbcHs256<'a> = EciesA256KwJweA128CbcHs256<'a,NistP384>;
 
 /// RSA hybrid encryption as used by JWE when "alg"=RSA-OAEP and "enc"=A256GCM. 
