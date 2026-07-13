@@ -9,7 +9,7 @@ use kdfs::rfc5869_hkdf::Hkdf;
 use kdfs::hybrid_array::Array;
 
 use kems::{Capsulator, EncapsulateWithKeyWrap, eckem::{SeedAsScalar}, hybrid::{HybridKem, QsfCombiner2}, ml_kem::MlKemWrapper, x448kem::X448Capsulator, x25519kem::X25519Capsulator};
-use kems::{EncodedSizeUser2, Decapsulate,GetEncapsulator, DecapsulateWithKeyWrap, OsRng, EncapsulateDeterministic2, kem_with_kdf::EcCombinerOpenPgp};
+use kems::{GetRecipientPublicKeyBytes, Decapsulate,GetEncapsulator, DecapsulateWithKeyWrap, OsRng, EncapsulateDeterministic2, kem_with_kdf::EcCombinerOpenPgp};
 use kems::kem_with_kdf::{CombinerAllPubKeys, KemWithKdf};
 use ml_kem::{MlKem768, MlKem1024};
 
@@ -537,10 +537,10 @@ fn test_pqc_a_1_1() -> Result<(), pem::PemError>
             QsfCombiner2<Okdf1<sha3::Sha3_256>,OpenPgpLabelMlKem768X25519>,
             SeedAsScalar>;
 
-    let decapsulator = HybridCapsulatorOpenPgpMlKem768X25519::from_bytes_decap(priv_key_bytes.try_into().unwrap());
-    let encapsulator = HybridCapsulatorOpenPgpMlKem768X25519::from_bytes_encap(pub_key_bytes2.try_into().unwrap());
+    let decapsulator = HybridCapsulatorOpenPgpMlKem768X25519::try_from_slice_decap(priv_key_bytes).unwrap();
+    let encapsulator = HybridCapsulatorOpenPgpMlKem768X25519::try_from_slice_encap(pub_key_bytes2).unwrap();
 
-    assert_eq!( decapsulator.get_encapsulator().as_bytes(), encapsulator.as_bytes());
+    assert_eq!( decapsulator.encapsulation_key().get_recipient_public_key_bytes(), encapsulator.get_recipient_public_key_bytes());
 
     let shared_secret2 = decapsulator.decapsulate(ciphertext.try_into().unwrap()).unwrap();
     assert_eq!( shared_secret2, shared_secret );
@@ -622,10 +622,10 @@ fn test_pqc_a_4() ->Result<(), pem::PemError>
             QsfCombiner2<Okdf1<sha3::Sha3_256>,OpenPgpLabelMlKem1025X448>,
             SeedAsScalar>;
 
-    let decapsulator = HybridCapsulatorOpenPgpMlKem1024X448::from_bytes_decap(priv_key_bytes.try_into().unwrap());
-    let encapsulator = HybridCapsulatorOpenPgpMlKem1024X448::from_bytes_encap(pub_key_bytes2.try_into().unwrap());
+    let decapsulator = HybridCapsulatorOpenPgpMlKem1024X448::try_from_slice_decap(priv_key_bytes).unwrap();
+    let encapsulator = HybridCapsulatorOpenPgpMlKem1024X448::try_from_slice_encap(pub_key_bytes2).unwrap();
 
-    assert_eq!( decapsulator.get_encapsulator().as_bytes(), encapsulator.as_bytes());
+    assert_eq!( decapsulator.encapsulation_key().get_recipient_public_key_bytes(), encapsulator.get_recipient_public_key_bytes());
 
     let message_bin = pem::parse(A_4_2_MESSAGE_KEY_BLOCK)?;
     let message_bin = message_bin.contents();

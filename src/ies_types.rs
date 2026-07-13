@@ -4,23 +4,25 @@ use super::SimpleIes;
 use crate::IesWithDerivedIv;
 #[allow(unused)]
 use crate::IesWithKeyWrap;
-
-// #[cfg(all(feature = "rustcrypto-alternate"))]
-// use crypto_secretbox::XSalsa20Poly1305;
-//use kdfs::misc::CryptoBoxKdf;
-
-
+#[cfg(all(feature = "rustcrypto-secretbox", feature = "rustcrypto-blake2"))]
+use crate::cryptobox::XSalsa20Poly1305Wrapper;
+#[allow(unused)]
+use kdfs::misc::CryptoBoxKdf;
 #[allow(unused)]
 use kdfs::nistsp800_56::ConcatKdf;
 #[allow(unused)]
 use kems::eckem::{EcUncompressedEncoder, EcdhKemUncompressed, EcdhKem, EcRawEncoder};
+#[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-cbc", feature="rustcrypto-hmac"))]
+use kems::jwe::JweKemEcSha256;
+
 #[allow(unused)]
-use kems::kem_with_kdf::{CombinerEphemOnly, CombinerNoKeys, JwaKdf, KemWithKdf};
+use kems::kem_with_kdf::{CombinerEphemOnly, CombinerAllPubKeys, CombinerNoKeys, JwaKdf, KemWithKdf};
 #[cfg(feature="rustcrypto-rsa")]
 use kems::rsakem::{Oaep2, RsaKem};
-// #[cfg(feature="rustcrypto-x25519")]
-// use kems::x25519kem::{X25519Capsulator};
-
+#[allow(unused)]
+use kems::x25519kem::X25519Capsulator;
+use p256::NistP256;
+use p384::NistP384;
 #[cfg(all(feature = "rustcrypto-rsa"))]
 use rsa::Pkcs1v15Encrypt;
 #[cfg(all(feature = "rustcrypto-aes", feature="rustcrypto-sha2", feature="rustcrypto-hmac", feature="rustcrypto-cbc"))]
@@ -120,9 +122,9 @@ pub type RsaOAEPSHA384AESGCM<M> = SimpleIes<RsaKem<M, U16, Oaep2<sha2::Sha384,sh
 pub type RsaOAEPSHA512AESGCM<M> = SimpleIes<RsaKem<M, U16, Oaep2<sha2::Sha512,sha2::Sha512>>, AesGcm<Aes128,U16,U16>>;
 
 /// Ecies cryptor using the cryptbox algorithm from libsodium. Uses X25519 curve with XSala20 encryption and Poly1305 MACing
-//#[cfg(all(feature = "rustcrypto-x25519", feature = "rustcrypto-blake2"))]
-// pub type EciesSodiumX25519      = SimpleIes<KemWithKdf<X25519Capsulator<SeedAsScalar>, CombinerEphemOnly, CryptoBoxKdf<blake2::Blake2b::<U24>>, U56>, XSalsa20Poly1305>;
-//type EciesSodiumX255192      = IesWithDerivedIv<KemWithKdf::<X25519Capsulator<SeedAsScalar>, kems::kem_with_kdf::CombinerAllPubKeys, CryptoBoxKdf<blake2::Blake2b::<U24>>, U56>, XSalsa20Poly1305Wrapper>;
+#[cfg(all(feature = "rustcrypto-x25519", feature = "rustcrypto-blake2", feature = "rustcrypto-secretbox"))]
+pub type EciesSodiumX255192      = IesWithDerivedIv<KemWithKdf::<X25519Capsulator<SeedAsScalar>, CombinerAllPubKeys, CryptoBoxKdf<blake2::Blake2b::<U24>>, U56>, XSalsa20Poly1305Wrapper>;
+
 
 
 /// Ecies encryptor using the EC encryption mechanism from GM/T 0003, which uses SM2 curve with SM3 hash function
@@ -132,12 +134,20 @@ pub type EciesSm2          = SimpleIes<EcdhKem<Sm2, EcUncompressedEncoder<Sm2>, 
 /// Ecies encryptor using the JWE encryption mechanism with AesCbcHs128 encryption
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-cbc", feature="rustcrypto-hmac"))]
 //pub type EciesJweA128CbcHs256<'a,C> = SimpleIes::<EcdhKemUncompressed::<C,kems::eckem::EcCombinerJwa<'a,Sha256>,U32, kems::eckem::SeedAsScalar>, A128CbcHS256>;
-pub type EciesJweA128CbcHs256<'a,C> = SimpleIes::<KemWithKdf<EcdhKemUncompressed::<C,kems::eckem::SeedAsScalar>, CombinerNoKeys, JwaKdf<'a,ConcatKdf<Sha256>,true>, U32>, A128CbcHS256>;
+//pub type EciesJweA128CbcHs256<'a,C> = SimpleIes::<KemWithKdf<EcdhKemRaw::<C,kems::eckem::SeedAsScalar>, CombinerNoKeys, JwaKdf<'a,ConcatKdf<Sha256>,true>, U32>, A128CbcHS256>;
+pub type EciesJweA128CbcHs256<'a,C> = SimpleIes::<JweKemEcSha256<'a,C,U32>, A128CbcHS256>;
+
+#[cfg(all(feature="rustcrypto-p256", feature = "rustcrypto-sha2", feature="rustcrypto-cbc", feature="rustcrypto-hmac"))]
+pub type EciesJweP256A128CbcHs256<'a> = EciesJweA128CbcHs256<'a,NistP256>;
 
 /// Ecies encryptor using the JWE encryption mechanism with AesKw128 and AesCbcHs128 encryption
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-cbc", feature="rustcrypto-hmac"))]
 //pub type EciesA256KwJweA128CbcHs256<'a,C> = IesWithKeyWrap::<EcdhKemUncompressed::<C,kems::eckem::EcCombinerJwa<'a,Sha256>,U32, kems::eckem::SeedAsScalar>, Aes256, A128CbcHS256>;
-pub type EciesA256KwJweA128CbcHs256<'a,C> = IesWithKeyWrap::<KemWithKdf<EcdhKemUncompressed::<C,kems::eckem::SeedAsScalar>, CombinerNoKeys, JwaKdf<'a,ConcatKdf<Sha256>,true>, U32>, Aes256, A128CbcHS256>;
+//pub type EciesA256KwJweA128CbcHs256<'a,C> = IesWithKeyWrap::<KemWithKdf<EcdhKemRaw::<C,kems::eckem::SeedAsScalar>, CombinerNoKeys, JwaKdf<'a,ConcatKdf<Sha256>,true>, U32>, Aes256, A128CbcHS256>;
+pub type EciesA256KwJweA128CbcHs256<'a,C> = IesWithKeyWrap::<JweKemEcSha256<'a,C,U32>, Aes256, A128CbcHS256>;
+
+pub type EciesP256A256KwJweA128CbcHs256<'a> = EciesA256KwJweA128CbcHs256<'a,NistP256>;
+pub type EciesP384A256KwJweA128CbcHs256<'a> = EciesA256KwJweA128CbcHs256<'a,NistP384>;
 
 /// RSA hybrid encryption as used by JWE when "alg"=RSA-OAEP and "enc"=A256GCM. 
 /// RSA-OEAP (with SHA-1) is used to encrypt a content encryption key. The CEK is used to encrypt the payload using Aes in GCM mode
