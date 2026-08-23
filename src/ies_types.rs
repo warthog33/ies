@@ -6,21 +6,24 @@ use crate::IesWithDerivedIv;
 use crate::IesWithKeyWrap;
 #[cfg(all(feature = "rustcrypto-secretbox", feature = "rustcrypto-blake2"))]
 use crate::cryptobox::XSalsa20Poly1305Wrapper;
+use kdfs::emv::EmvCmacAes128;
 #[allow(unused)]
 use kdfs::misc::CryptoBoxKdf;
 #[allow(unused)]
 use kdfs::nistsp800_56::ConcatKdf;
+use kems::eckem::EcCompactEncoder;
+use kems::eckem::EcdhKemCompact;
 #[allow(unused)]
 use kems::eckem::{EcUncompressedEncoder, EcdhKemUncompressed, EcdhKem, EcRawEncoder};
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-cbc", feature="rustcrypto-hmac"))]
 use kems::jwe::JweKemEcSha256;
 
 #[allow(unused)]
-use kems::kem_with_kdf::{CombinerEphemOnly, CombinerAllPubKeys, CombinerNoKeys, JwaKdf, KemWithKdf};
+use kems::kem_with_kdf::{CombinerCiphertext, CombinerAllPubKeys, CombinerNoKeys, JwaKdf, KemWithKdf};
 #[cfg(feature="rustcrypto-rsa")]
 use kems::rsakem::{Oaep2, RsaKem};
 #[cfg(feature="rustcrypto-x25519")]
-use kems::x25519kem::X25519Capsulator;
+use kems::x25519kem::X25519Kem;
 #[cfg(feature="rustcrypto-p256")]
 use p256::NistP256;
 #[cfg(feature="rustcrypto-p384")]
@@ -31,8 +34,7 @@ use rsa::Pkcs1v15Encrypt;
 use crate::rfc7518::A128CbcHS256;
 #[allow(unused)]
 use crate::hash_encrypt::HashEncryption;
-#[allow(unused)]
-use kems::generic_array::typenum::consts::*;
+use kem::consts::*;
 
 pub type X963Kdf<H> = kdfs::ansi_x9_63::X963Kdf<H>;
 
@@ -44,54 +46,52 @@ use sha1::Sha1;
 use sha2::{Sha224, Sha256, Sha384, Sha512};
 #[cfg(all(feature = "rustcrypto-sm2"))]
 use sm2::Sm2;
-#[allow(unused)]
-use kems::eckem::SeedAsScalar;
 
 
 /// Implementation of Apple's eciesEncryptionStandardX963SHA1AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-1 implementation and AES-128 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha1", feature="rustcrypto-aes"))]
-pub type EciesStandardX963SHA1AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha1>, U16>, AesGcm<Aes128,U16,U16>>;
+pub type EciesStandardX963SHA1AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C>, CombinerCiphertext, X963Kdf<Sha1>, U16>, AesGcm<Aes128,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardX963SHA224AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-256 implementation and AES-128 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardX963SHA224AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha224>, U16>, AesGcm<Aes128,U16,U16>>;
+pub type EciesStandardX963SHA224AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C>, CombinerCiphertext, X963Kdf<Sha224>, U16>, AesGcm<Aes128,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardX963SHA256AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-256 implementation and AES-128 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardX963SHA256AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha256>, U16>, AesGcm<Aes128,U16,U16>>;
+pub type EciesStandardX963SHA256AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C>, CombinerCiphertext, X963Kdf<Sha256>, U16>, AesGcm<Aes128,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardX963SHA384AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-384 implementation and AES-256 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardX963SHA384AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha384>, U32>, AesGcm<Aes256,U16,U16>>;
+pub type EciesStandardX963SHA384AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C>, CombinerCiphertext, X963Kdf<Sha384>, U32>, AesGcm<Aes256,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardX963SHA512AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-384 implementation and AES-256 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardX963SHA512AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha512>, U32>, AesGcm<Aes256,U16,U16>>;
+pub type EciesStandardX963SHA512AESGCM<C>           = SimpleIes<KemWithKdf<EcdhKemUncompressed<C>, CombinerCiphertext, X963Kdf<Sha512>, U32>, AesGcm<Aes256,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardVariableIVX963SHA224AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-224 implementation and AES-128 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardVariableIVX963SHA224AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha224>, U32>, AesGcm<Aes128,U16,U16>>;
+pub type EciesStandardVariableIVX963SHA224AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C>, CombinerCiphertext, X963Kdf<Sha224>, U32>, AesGcm<Aes128,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardVariableIVX963SHA256AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-256 implementation and AES-128 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardVariableIVX963SHA256AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha256>, U32>, AesGcm<Aes128,U16,U16>>;
+pub type EciesStandardVariableIVX963SHA256AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C>, CombinerCiphertext, X963Kdf<Sha256>, U32>, AesGcm<Aes128,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardVariableIVX963SHA384AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-384 implementation and AES-256 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardVariableIVX963SHA384AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C, SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha384>, U48>, AesGcm<Aes256,U16,U16>>;
+pub type EciesStandardVariableIVX963SHA384AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C>, CombinerCiphertext, X963Kdf<Sha384>, U48>, AesGcm<Aes256,U16,U16>>;
 
 /// Implementation of Apple's eciesEncryptionStandardVariableIVX963SHA512AESGCM elliptic curve decryption algorithm
 /// Key derivation uses X9.63 kdf with rust-cryptos native SHA-512 implementation and AES-256 GCM is used for authenticated encryption. The AES nonce is zero.
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-aes"))]
-pub type EciesStandardVariableIVX963SHA512AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C, SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha512>, U48>, AesGcm<Aes256,U16,U16>>;
+pub type EciesStandardVariableIVX963SHA512AESGCM<C>           = IesWithDerivedIv<KemWithKdf<EcdhKemUncompressed<C>, CombinerCiphertext, X963Kdf<Sha512>, U48>, AesGcm<Aes256,U16,U16>>;
 
 /// Implementation of Apple's rsaEncryptionOAEPSHA1AESGCM cipher
 /// The method uses RSA OAEP to encrypt an ephemeral AES-128 key. SHA-1 is used for both hashing and the mask generation function. The IV used in AES GCM is 16 bytes of zeros.
@@ -125,33 +125,33 @@ pub type RsaOAEPSHA512AESGCM<M> = SimpleIes<RsaKem<M, U16, Oaep2<sha2::Sha512,sh
 
 /// Ecies cryptor using the cryptbox algorithm from libsodium. Uses X25519 curve with XSala20 encryption and Poly1305 MACing
 #[cfg(all(feature = "rustcrypto-x25519", feature = "rustcrypto-blake2", feature = "rustcrypto-secretbox"))]
-pub type EciesSodiumX255192      = IesWithDerivedIv<KemWithKdf::<X25519Capsulator<SeedAsScalar>, CombinerAllPubKeys, CryptoBoxKdf<blake2::Blake2b::<U24>>, U56>, XSalsa20Poly1305Wrapper>;
+pub type EciesSodiumX255192      = IesWithDerivedIv<KemWithKdf::<X25519Kem, CombinerAllPubKeys, CryptoBoxKdf<blake2::Blake2b::<U24>>, U56>, XSalsa20Poly1305Wrapper>;
 
 
 
 /// Ecies encryptor using the EC encryption mechanism from GM/T 0003, which uses SM2 curve with SM3 hash function
 #[cfg(all(feature = "rustcrypto-sm2", feature="rustcrypto-sm3"))]
-pub type EciesSm2          = SimpleIes<EcdhKem<Sm2, EcUncompressedEncoder<Sm2>, kems::eckem::SeedAsScalar, EcRawEncoder<Sm2>>, HashEncryption<sm3::Sm3, U64>>;
+pub type EciesSm2          = SimpleIes<EcdhKem<Sm2, EcRawEncoder<Sm2>>, HashEncryption<sm3::Sm3, U64>>;
 
 /// Ecies encryptor using the JWE encryption mechanism with AesCbcHs128 encryption
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-cbc", feature="rustcrypto-hmac"))]
-//pub type EciesJweA128CbcHs256<'a,C> = SimpleIes::<EcdhKemUncompressed::<C,kems::eckem::EcCombinerJwa<'a,Sha256>,U32, kems::eckem::SeedAsScalar>, A128CbcHS256>;
-//pub type EciesJweA128CbcHs256<'a,C> = SimpleIes::<KemWithKdf<EcdhKemRaw::<C,kems::eckem::SeedAsScalar>, CombinerNoKeys, JwaKdf<'a,ConcatKdf<Sha256>,true>, U32>, A128CbcHS256>;
-pub type EciesJweA128CbcHs256<'a,C> = SimpleIes::<JweKemEcSha256<'a,C,U32>, A128CbcHS256>;
+//pub type EciesJweA128CbcHs256<C> = SimpleIes::<EcdhKemUncompressed::<C,kems::eckem::EcCombinerJwa<Sha256>,U32, kems::eckem::SeedAsScalar>, A128CbcHS256>;
+//pub type EciesJweA128CbcHs256<C> = SimpleIes::<KemWithKdf<EcdhKemRaw::<C,kems::eckem::SeedAsScalar>, CombinerNoKeys, JwaKdf<ConcatKdf<Sha256>,true>, U32>, A128CbcHS256>;
+pub type EciesJweA128CbcHs256<C> = SimpleIes::<JweKemEcSha256<C,U32>, A128CbcHS256>;
 
 #[cfg(all(feature="rustcrypto-p256", feature = "rustcrypto-sha2", feature="rustcrypto-cbc", feature="rustcrypto-hmac"))]
-pub type EciesJweP256A128CbcHs256<'a> = EciesJweA128CbcHs256<'a,NistP256>;
+pub type EciesJweP256A128CbcHs256 = EciesJweA128CbcHs256<NistP256>;
 
 /// Ecies encryptor using the JWE encryption mechanism with AesKw128 and AesCbcHs128 encryption
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-cbc", feature="rustcrypto-hmac"))]
-//pub type EciesA256KwJweA128CbcHs256<'a,C> = IesWithKeyWrap::<EcdhKemUncompressed::<C,kems::eckem::EcCombinerJwa<'a,Sha256>,U32, kems::eckem::SeedAsScalar>, Aes256, A128CbcHS256>;
-//pub type EciesA256KwJweA128CbcHs256<'a,C> = IesWithKeyWrap::<KemWithKdf<EcdhKemRaw::<C,kems::eckem::SeedAsScalar>, CombinerNoKeys, JwaKdf<'a,ConcatKdf<Sha256>,true>, U32>, Aes256, A128CbcHS256>;
-pub type EciesA256KwJweA128CbcHs256<'a,C> = IesWithKeyWrap::<JweKemEcSha256<'a,C,U32>, Aes256, A128CbcHS256>;
+//pub type EciesA256KwJweA128CbcHs256<C> = IesWithKeyWrap::<EcdhKemUncompressed::<C,kems::eckem::EcCombinerJwa<Sha256>,U32, kems::eckem::SeedAsScalar>, Aes256, A128CbcHS256>;
+//pub type EciesA256KwJweA128CbcHs256<C> = IesWithKeyWrap::<KemWithKdf<EcdhKemRaw::<C,kems::eckem::SeedAsScalar>, CombinerNoKeys, JwaKdf<ConcatKdf<Sha256>,true>, U32>, Aes256, A128CbcHS256>;
+pub type EciesA256KwJweA128CbcHs256<C> = IesWithKeyWrap::<JweKemEcSha256<C,U32>, Aes256, A128CbcHS256>;
 
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-cbc", feature="rustcrypto-hmac"))]
-pub type EciesP256A256KwJweA128CbcHs256<'a> = EciesA256KwJweA128CbcHs256<'a,NistP256>;
+pub type EciesP256A256KwJweA128CbcHs256 = EciesA256KwJweA128CbcHs256<NistP256>;
 #[cfg(all(feature = "rustcrypto-sha2", feature="rustcrypto-cbc", feature="rustcrypto-hmac"))]
-pub type EciesP384A256KwJweA128CbcHs256<'a> = EciesA256KwJweA128CbcHs256<'a,NistP384>;
+pub type EciesP384A256KwJweA128CbcHs256 = EciesA256KwJweA128CbcHs256<NistP384>;
 
 /// RSA hybrid encryption as used by JWE when "alg"=RSA-OAEP and "enc"=A256GCM. 
 /// RSA-OEAP (with SHA-1) is used to encrypt a content encryption key. The CEK is used to encrypt the payload using Aes in GCM mode
@@ -170,3 +170,17 @@ pub type RsaesOaep256IesJweA256Gcm<L> = SimpleIes::<RsaKem<L, U32, Oaep2<Sha256,
 /// The generic parameter L is the size of the RSA modulus
 #[cfg(all(feature = "rustcrypto-rsa", feature="rustcrypto-aes", feature="rustcrypto-hmac", feature="rustcrypto-sha2", feature="rustcrypto-cbc"))]
 pub type RsaesPkcs15IesJweA128CbcHS256<L> = SimpleIes::<RsaKem<L, U32, Pkcs1v15Encrypt>, A128CbcHS256>;
+
+
+/// Used by Apple 
+pub type EciesCompactX963SHA256AESGCM<C> = SimpleIes<KemWithKdf<EcdhKemCompact<C>, CombinerCiphertext, X963Kdf<Sha256>, U16>, AesGcm<Aes128, U16, U16>>;
+    
+
+
+// EMV
+pub type EcdhKemP256EmvCmac128 = KemWithKdf<EcdhKem<NistP256, EcCompactEncoder<NistP256>>, CombinerNoKeys, EmvCmacAes128, U16>;
+
+
+// SM2 type from rfc_draft_shen_sm2_key_exchange_example_1
+pub type EcdhSm2X963KdfSm2 = KemWithKdf<EcdhKem<sm2::Sm2, EcUncompressedEncoder<sm2::Sm2>>, CombinerNoKeys, X963Kdf<sm3::Sm3>, U16>;
+    

@@ -35,13 +35,14 @@ use std::array::TryFromSliceError;
 
 use aead::{consts::{U8,U16}, Aead, KeyInit, Payload, Tag, Nonce};
 use aes_kw::AesKw;
-use cipher::{Array, BlockCipherDecrypt, BlockCipherEncrypt, BlockSizeUser, KeySizeUser, typenum::{Diff, Mod, Unsigned, Zero}};
+use cipher::{Array, BlockCipherDecrypt, BlockCipherEncrypt, BlockSizeUser, KeySizeUser, typenum::{Diff, Mod, NonZero, Sum, Unsigned, Zero}};
 
 use kdfs::hybrid_array::ArraySize;
-use kems::{Decapsulate, Encapsulate, EncapsulateDeterministic2, EncapsulateWithKeyWrapDeterministic};
-use kems::{Capsulator, DecapsulateWithKeyWrap, EncapsulateWithKeyWrap, FromKey, GenerateDeterministic3, SetKdf, generic_array::typenum::{NonZero, Sum}};
-use kems::{CryptoRngCore,CryptoRng,RngCore};
-use kems::generic_array::{GenericArray, ArrayLength};
+use kems::{EncapsulateDeterministic, EncapsulateWithKeyWrapDeterministic};
+use kems::{TryDecapsulateWithKeyWrap, EncapsulateWithKeyWrap, FromKey, SetKdf};
+use kem::{InvalidKey};
+
+use kem::{Encapsulate, FromSeed, Kem, TryDecapsulate, TryKeyInit};
 
 
 pub mod ies_types;
@@ -138,48 +139,60 @@ pub mod cms
 ///
 /// Trait which includes a variety of functions to generate and initiate ies-based ciphers
 /// 
-pub trait Ies<C: Capsulator> 
+pub trait Ies<C: Kem> 
 {
-    type Encryptor: FromKey<Key = C::Encapsulator>;
-    type Decryptor: FromKey<Key = C::Decapsulator>;
+    type Encryptor: FromKey<Key = C::EncapsulationKey>;
+    type Decryptor: FromKey<Key = C::DecapsulationKey>;
 
-    fn generate ( rng: &mut impl CryptoRngCore ) -> (Self::Encryptor, Self::Decryptor) 
+    fn generate () -> (Self::Encryptor, Self::Decryptor) 
     {
-        let (encapsulator, decapsulator) = C::generate_from_rng(rng);
+        let (decapsulator, encapsulator, ) = <C as Kem>::generate_keypair();
         (Self::Encryptor::from_key(encapsulator), Self::Decryptor::from_key(decapsulator))
     }
-    fn from_key_decap ( private: <C::Decapsulator as FromKey>::Key ) -> Self::Decryptor
-    where <C as Capsulator>::Decapsulator: FromKey,
+    fn from_key_decap ( private: <C::DecapsulationKey as FromKey>::Key ) -> Self::Decryptor
+    where <C as Kem>::DecapsulationKey: FromKey,
     {
-        Self::Decryptor::from_key(C::Decapsulator::from_key(private))
+        Self::Decryptor::from_key(C::DecapsulationKey::from_key(private))
     }
-    fn from_key_encap (key: <C::Encapsulator as FromKey>::Key) -> Self::Encryptor
-    where <C as Capsulator>::Encapsulator: FromKey
+    fn from_key_encap (key: <C::EncapsulationKey as FromKey>::Key) -> Self::Encryptor
+    where <C as Kem>::EncapsulationKey: FromKey
     {
-        Self::Encryptor::from_key(C::Encapsulator::from_key(key))
+        Self::Encryptor::from_key(C::EncapsulationKey::from_key(key))
     }
-    fn from_bytes_decap ( private_bytes: &Array::<u8, <<C as Capsulator>::Decapsulator as KeySizeUser>::KeySize> ) -> Self::Decryptor
-    where <C as Capsulator>::Decapsulator: KeySizeUser + KeyInit,
+    fn from_bytes_decap ( private_bytes: &Array::<u8, <<C as Kem>::DecapsulationKey as KeySizeUser>::KeySize> ) -> Self::Decryptor
+    where <C as Kem>::DecapsulationKey: KeySizeUser + KeyInit,
     {
-        Self::Decryptor::from_key(<<C as Capsulator>::Decapsulator as KeyInit>::new(private_bytes))
+        Self::Decryptor::from_key(<<C as Kem>::DecapsulationKey as KeyInit>::new(private_bytes))
     }
-    fn from_bytes_encap (public_bytes: &Array::<u8, <<C as Capsulator>::Encapsulator as KeySizeUser>::KeySize>) -> Self::Encryptor
-    where <C as Capsulator>::Encapsulator: KeySizeUser + KeyInit,
+    fn from_bytes_encap (public_bytes: &Array::<u8, <<C as Kem>::EncapsulationKey as KeySizeUser>::KeySize>) -> Self::Encryptor
+    where <C as Kem>::EncapsulationKey: KeyInit,
     {
-        Self::Encryptor::from_key(<<C as Capsulator>::Encapsulator as KeyInit>::new(public_bytes))
+        Self::Encryptor::from_key(<<C as Kem>::EncapsulationKey as KeyInit>::new(public_bytes))
     }
-    fn try_from_slice_encap (public_bytes: &[u8]) -> Result<Self::Encryptor, TryFromSliceError>
-    where <C as Capsulator>::Encapsulator: for<'a> TryFrom<&'a [u8], Error=TryFromSliceError>
+    fn try_from_bytes_encap (public_bytes: &Array::<u8, <<C as Kem>::EncapsulationKey as KeySizeUser>::KeySize>) -> Result<Self::Encryptor, InvalidKey>
+    where <C as Kem>::EncapsulationKey: TryKeyInit,
     {
-        let key = <C as Capsulator>::Encapsulator::try_from(public_bytes)?;
+        Ok(Self::Encryptor::from_key(<<C as Kem>::EncapsulationKey as TryKeyInit>::new(public_bytes)?))
+    }
+    fn try_from_slice_encap (public_bytes: &[u8]) -> Result<Self::Encryptor, InvalidKey>
+    //where <C as Kem>::EncapsulationKey: for<'a> TryFrom<&'a [u8], Error=TryFromSliceError>
+    where C::EncapsulationKey: TryKeyInit
+    {
+        let key = C::EncapsulationKey::new_from_slice(public_bytes)?;
         Ok(Self::Encryptor::from_key(key))
     }
+    fn try_from_slice_decap (public_bytes: &[u8]) -> Result<Self::Decryptor, std::array::TryFromSliceError>
+    where <C as Kem>::DecapsulationKey: TryKeyInit
+    {
+        let key = <C as Kem>::DecapsulationKey::new_from_slice(public_bytes).unwrap();
+        Ok(Self::Decryptor::from_key(key))
+    }
 
-    fn from_encapsulator (encapsulator: C::Encapsulator) -> Self::Encryptor
+    fn from_encapsulator (encapsulator: C::EncapsulationKey) -> Self::Encryptor
     {
         Self::Encryptor::from_key(encapsulator)
     }
-    fn from_decapsulator (decapsulator: C::Decapsulator) -> Self::Decryptor
+    fn from_decapsulator (decapsulator: C::DecapsulationKey) -> Self::Decryptor
     {
         Self::Decryptor::from_key(decapsulator)
     }
@@ -192,15 +205,15 @@ pub trait Ies<C: Capsulator>
 /// an encryption key
 /// Used by Apples ECIES algorithm
 ///
-pub struct SimpleIes <C: Capsulator, A: Aead + KeyInit > 
+pub struct SimpleIes <C: Kem, A: Aead + KeyInit > 
 {
     phantom: PhantomData<C>,
     phantom1: PhantomData<A>,
 } 
 
-impl<C: Capsulator, A: Aead + KeyInit> Ies<C> for SimpleIes<C,A> 
-where <C as Capsulator>::Decapsulator: FromKey,
-    <C as Capsulator>::Encapsulator: FromKey
+impl<C: Kem, A: Aead + KeyInit> Ies<C> for SimpleIes<C,A> 
+where <C as Kem>::DecapsulationKey: FromKey,
+    <C as Kem>::EncapsulationKey: FromKey,
 {
     type Decryptor = SimpleIesDecryptor<C,A>;
     type Encryptor = SimpleIesEncryptor<C,A>;
@@ -212,21 +225,21 @@ where <C as Capsulator>::Decapsulator: FromKey,
 /// of the KEM is used as the content encrpytion key. The IV can be 
 /// explicitly set, otherwise it defaults to all zeros
 /// 
-pub struct SimpleIesEncryptor <C: Capsulator, A: Aead + KeyInit > 
+pub struct SimpleIesEncryptor <C: Kem, A: Aead + KeyInit > 
 {
-    pub encapsulator: C::Encapsulator,
+    pub encapsulator: C::EncapsulationKey,
     iv: Array<u8, A::NonceSize>,
 } 
 
-impl<C: Capsulator, A: Aead+KeyInit> FromKey for SimpleIesEncryptor<C,A>
+impl<C: Kem, A: Aead+KeyInit> FromKey for SimpleIesEncryptor<C,A>
 {
-    type Key = C::Encapsulator;
+    type Key = C::EncapsulationKey;
     fn from_key(key: Self::Key) -> Self {
         Self { encapsulator: key, iv: Array::default()}
     }
 }
 
-impl <C: Capsulator, A> SimpleIesEncryptor<C, A> 
+impl <C: Kem, A> SimpleIesEncryptor<C, A> 
 where A: Aead + KeyInit,
 {
     pub fn set_iv (&mut self, iv: Array<u8, A::NonceSize>) { 
@@ -234,11 +247,11 @@ where A: Aead + KeyInit,
     }
 }
 
-impl <C: Capsulator, A> SetKdf for SimpleIesEncryptor<C, A> 
+impl <C: Kem, A> SetKdf for SimpleIesEncryptor<C, A> 
 where A: Aead + KeyInit,
-    C::Encapsulator: SetKdf,
+    C::EncapsulationKey: SetKdf,
 {
-    type Kdf = <C::Encapsulator as SetKdf>::Kdf;
+    type Kdf = <C::EncapsulationKey as SetKdf>::Kdf;
     fn set_kdf (&mut self, kdf: Self::Kdf ) { 
         self.encapsulator.set_kdf(kdf);
     }
@@ -246,17 +259,17 @@ where A: Aead + KeyInit,
 ///
 /// 
 /// 
-impl <C: Capsulator, A> SimpleIesEncryptor<C, A> 
+impl <C: Kem, A> SimpleIesEncryptor<C, A> 
     where A: Aead + KeyInit,
 {
-    pub fn seal_detached_encapsulated_key <'msg, 'aad, R: CryptoRng + RngCore> (
+    pub fn seal_detached_encapsulated_key <'msg, 'aad> (
         &self,
-        csprng: &mut R,
+        //csprng: &mut R,
         pt: impl Into<Payload<'msg, 'aad>>,
-    ) -> Result<(GenericArray<u8, C::CiphertextSize>, Vec<u8>), Error> 
-    where C: Capsulator<SharedKeySize = A::KeySize>
+    ) -> Result<(Array<u8, C::CiphertextSize>, Vec<u8>), Error> 
+    where C: Kem<SharedKeySize = A::KeySize>
     {
-        let (encapsulated_key, shared_secret) = self.encapsulator.encapsulate(csprng).map_err(|_f|Error::KemError)?;
+        let (encapsulated_key, shared_secret) = self.encapsulator.encapsulate(); //.map_err(|_f|Error::KemError)?;
         let encryptor = A::new(&shared_secret);
         // it would be preferable to use one of the in-place aead functions, however the in-place functions assume ciphertext len = plaintext len
         // this is not the case with CBC Encrypt + CBC MAC which is a common AEAD used in CMS and JWE. encrypt works with vectors and therefore 
@@ -268,16 +281,16 @@ impl <C: Capsulator, A> SimpleIesEncryptor<C, A>
         &self,
         seed: &[u8],
         pt: impl Into<Payload<'msg, 'aad>>,
-    ) -> Result<(GenericArray<u8, C::CiphertextSize>, Vec<u8>), Error> 
-    where C: Capsulator<SharedKeySize = A::KeySize>,
-        C::Encapsulator: EncapsulateDeterministic2<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>
+    ) -> Result<(Array<u8, C::CiphertextSize>, Vec<u8>), Error> 
+    where C: Kem<SharedKeySize = A::KeySize>,
+        C::EncapsulationKey: EncapsulateDeterministic, //2<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>
     {
-        let (encapsulated_key, shared_secret) = self.encapsulator.encapsulate_deterministic(seed).map_err(|_f|Error::KemError)?;
-        let encryptor = A::new(&shared_secret);
+        let (encapsulated_key, shared_secret) = self.encapsulator.encapsulate_deterministic(seed); //.map_err(|_f|Error::KemError)?;
+        let encryptor = A::new(&shared_secret.as_slice().try_into().unwrap());
         // it would be preferable to use one of the in-place aead functions, however the in-place functions assume ciphertext len = plaintext len
         // this is not the case with CBC Encrypt + CBC MAC which is a common AEAD used in CMS and JWE. encrypt works with vectors and therefore 
         // allows for different input and output sizes.
-        return Ok((encapsulated_key, encryptor.encrypt(&self.iv, pt)?))
+        return Ok((encapsulated_key.as_slice().try_into().unwrap(), encryptor.encrypt(&self.iv, pt)?))
     }
 
 
@@ -285,24 +298,25 @@ impl <C: Capsulator, A> SimpleIesEncryptor<C, A>
     /// Encrypts the provided msg with authentication of the optional authenticated data field
     /// Returns a single vector containing the encapsulated key, enciphered payload and tag
     /// 
-    pub fn seal <'msg, 'aad, R: CryptoRng + RngCore> (
+    pub fn seal <'msg, 'aad> (
         &self,
-        csprng: &mut R,
+        //sprng: &mut R,
         pt: impl Into<Payload<'msg, 'aad>>
     ) -> Result<Vec<u8>, Error> 
-    where C: Capsulator<SharedKeySize = A::KeySize>
+    where C: Kem<SharedKeySize = A::KeySize>
     {
-        let ( encapsulated_key, ct ) = self.seal_detached_encapsulated_key(csprng, pt)?;
+        let ( encapsulated_key, ct ) = self.seal_detached_encapsulated_key(pt)?;
         Ok ( [encapsulated_key.as_slice(), ct.as_slice()].concat())
     }
 
     pub fn seal_deterministic <'msg, 'aad> (
         &self,
-        seed: &Array<u8, <C::Encapsulator as EncapsulateDeterministic2<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>>::SeedSize>,
+        //seed: &Array<u8, <C::EncapsulationKey as EncapsulateDeterministic2<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>>::SeedSize>,
+        seed: &[u8],
         pt: impl Into<Payload<'msg, 'aad>>
     ) -> Result<Vec<u8>, Error> 
-    where C: Capsulator<SharedKeySize = A::KeySize>,
-        C::Encapsulator: EncapsulateDeterministic2<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>
+    where C: Kem<SharedKeySize = A::KeySize>,
+        C::EncapsulationKey: EncapsulateDeterministic, //2<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>
     {
         let ( encapsulated_key, ct ) = self.seal_detached_encapsulated_key_deterministic(seed, pt)?;
         Ok ( [encapsulated_key.as_slice(), ct.as_slice()].concat())
@@ -311,14 +325,14 @@ impl <C: Capsulator, A> SimpleIesEncryptor<C, A>
     ///
     /// Encrypted the provided msg with authenication of the optical authenticated data field
     /// Returns the encapsulated key, enciphered payload and tag as separate fields.
-    pub fn seal_detached <'msg, 'aad, R: CryptoRng + RngCore> (
+    pub fn seal_detached <'msg, 'aad> (
         &self,
-        csprng: &mut R,
+        //csprng: &mut R,
         plaintext_payload_and_aad: impl Into<Payload<'msg, 'aad>>,
-    ) -> Result<(GenericArray<u8, C::CiphertextSize>, Vec<u8>, Tag<A>), Error> 
-    where C: Capsulator<SharedKeySize = A::KeySize>
+    ) -> Result<(Array<u8, C::CiphertextSize>, Vec<u8>, Tag<A>), Error> 
+    where C: Kem<SharedKeySize = A::KeySize>
     {
-        let (ek, mut ct) = self.seal_detached_encapsulated_key(csprng, plaintext_payload_and_aad)?;
+        let (ek, mut ct) = self.seal_detached_encapsulated_key(plaintext_payload_and_aad)?;
         let tag = ct.split_off(ct.len()-A::TagSize::USIZE);
         Ok((ek,ct,tag.as_slice().try_into().map_err(|_f|Error::LenError)?))
     }
@@ -327,9 +341,9 @@ impl <C: Capsulator, A> SimpleIesEncryptor<C, A>
         &self,
         seed: &[u8],
         plaintext_payload_and_aad: impl Into<Payload<'msg, 'aad>>,
-    ) -> Result<(GenericArray<u8, C::CiphertextSize>, Vec<u8>, Tag<A>), Error> 
-    where C: Capsulator<SharedKeySize = A::KeySize>,
-        C::Encapsulator: EncapsulateDeterministic2<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>
+    ) -> Result<(Array<u8, C::CiphertextSize>, Vec<u8>, Tag<A>), Error> 
+    where C: Kem<SharedKeySize = A::KeySize>,
+        C::EncapsulationKey: EncapsulateDeterministic //2<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>
     {
         let (ek, mut ct) = self.seal_detached_encapsulated_key_deterministic(seed, plaintext_payload_and_aad)?;
         let tag = ct.split_off(ct.len()-A::TagSize::USIZE);
@@ -338,21 +352,21 @@ impl <C: Capsulator, A> SimpleIesEncryptor<C, A>
 }
 
 
-pub struct SimpleIesDecryptor <C: Capsulator, A: Aead + KeyInit > 
+pub struct SimpleIesDecryptor <C: Kem, A: Aead + KeyInit > 
 {
-    pub decapsulator: C::Decapsulator,
+    pub decapsulator: C::DecapsulationKey,
     iv: Array<u8, A::NonceSize>,
 } 
 
-impl<C: Capsulator, A: Aead+KeyInit> FromKey for SimpleIesDecryptor<C,A>
+impl<C: Kem, A: Aead+KeyInit> FromKey for SimpleIesDecryptor<C,A>
 {
-    type Key = C::Decapsulator;
+    type Key = C::DecapsulationKey;
     fn from_key(key: Self::Key) -> Self {
         Self { decapsulator: key, iv: Array::default()}
     }
 }
 
-impl <C: Capsulator, A> SimpleIesDecryptor<C, A> 
+impl <C: Kem, A> SimpleIesDecryptor<C, A> 
 where A: Aead + KeyInit,
 {
     pub fn set_iv (&mut self, iv: Array<u8, A::NonceSize>) { 
@@ -360,11 +374,11 @@ where A: Aead + KeyInit,
     }
 }
 
-impl <C: Capsulator, A> SetKdf for SimpleIesDecryptor<C, A> 
+impl <C: Kem, A> SetKdf for SimpleIesDecryptor<C, A> 
 where A: Aead + KeyInit,
-    C::Decapsulator: SetKdf,
+    C::DecapsulationKey: SetKdf,
 {
-    type Kdf = <C::Decapsulator as SetKdf>::Kdf;
+    type Kdf = <C::DecapsulationKey as SetKdf>::Kdf;
     fn set_kdf (&mut self, kdf: Self::Kdf ) { 
         self.decapsulator.set_kdf(kdf);
     }
@@ -374,17 +388,17 @@ where A: Aead + KeyInit,
 ///
 /// The session key is used to decrypt the passed data and optional additional authentication data. Decrypted data is returned or an error.
 /// 
-impl <'msg, 'aad, C: Capsulator, A> SimpleIesDecryptor<C, A> 
+impl <'msg, 'aad, C: Kem + Kem, A> SimpleIesDecryptor<C, A> 
 where A: Aead + KeyInit,
-    C: Capsulator<SharedKeySize = A::KeySize>
+    C: Kem<SharedKeySize = A::KeySize> + Kem
 {
     pub fn open_detached_encapsulated_key(
         &self, 
-        encapped_key: &GenericArray<u8, C::CiphertextSize>,
+        encapped_key: &Array<u8, C::CiphertextSize>,
         encrypted_payload_and_tag: impl Into<Payload<'msg, 'aad>>,
     ) -> Result<Vec<u8>, Error>
     {
-        let shared_secret = self.decapsulator.decapsulate(encapped_key).map_err(|_|Error::KemError)?;
+        let shared_secret = self.decapsulator.try_decapsulate(encapped_key.as_slice().try_into().unwrap()).map_err(|_|Error::KemError)?;
         let encryptor = A::new(&shared_secret);
         Ok(encryptor.decrypt(&self.iv, encrypted_payload_and_tag)?)
     }
@@ -395,12 +409,12 @@ where A: Aead + KeyInit,
     {
         let encrypted_msg_as_payload: Payload = encrypted_msg.into();
         let (encapped_key_bytes, ciphertext) = encrypted_msg_as_payload.msg.split_at_checked(C::CiphertextSize::USIZE).ok_or(Error::LenError)?;
-        self.open_detached_encapsulated_key(GenericArray::from_slice(encapped_key_bytes), Payload{msg:&ciphertext, aad: encrypted_msg_as_payload.aad})
+        self.open_detached_encapsulated_key(encapped_key_bytes.try_into().unwrap(), Payload{msg:&ciphertext, aad: encrypted_msg_as_payload.aad})
     }
 
     pub fn try_open_detached(
         &self, 
-        encapped_key: &GenericArray<u8, C::CiphertextSize>,
+        encapped_key: &Array<u8, C::CiphertextSize>,
         encrypted_payload: impl Into<Payload<'msg, 'aad>>,
         tag: &Tag<A>,
     ) -> Result<Vec<u8>, Error>
@@ -420,55 +434,54 @@ where A: Aead + KeyInit,
 /// step. This allows for the encapsulating end to explicitly select a payload encryption
 /// key, allowing for multiple recipients
 ///
-pub struct IesWithKeyWrap <C: Capsulator, KW, A: Aead + KeyInit> 
+pub struct IesWithKeyWrap <C: Kem, KW, A: Aead + KeyInit> 
 {
     phantom1: PhantomData<C>,
     phantom2: PhantomData<A>,
     phantom3: PhantomData<KW>,
 } 
 
-impl<C: Capsulator, KW, A: Aead + KeyInit> Ies<C> for IesWithKeyWrap<C,KW,A> 
+impl<C: Kem, KW, A: Aead + KeyInit> Ies<C> for IesWithKeyWrap<C,KW,A> 
 {
     type Decryptor = IesDecryptorWithKeyWrap<C,KW,A>;
     type Encryptor = IesEncryptorWithKeyWrap<C,KW,A>;
 }
 
 // Generate an encryptor and decryptor for a secret seed
-impl<C: Capsulator, KW, A: Aead + KeyInit> IesWithKeyWrap<C,KW,A> 
-where C: GenerateDeterministic3,
-    C: Capsulator<Encapsulator=C::Public, Decapsulator=C::Private>,    
+impl<C: Kem, KW, A: Aead + KeyInit> IesWithKeyWrap<C,KW,A> 
+where C: Kem + FromSeed,    
 {
-    pub fn derive_from_seed(seed: &Array::<u8, <C as GenerateDeterministic3>::SeedSize>) -> 
+    pub fn derive_from_seed(seed: &Array::<u8, <C as FromSeed>::SeedSize>) -> 
         Result<(<Self as Ies<C>>::Encryptor, <Self as Ies<C>>::Decryptor ), ()>
     {
-        let (encapsulator, decapsulator) = C::generate_deterministic(&seed).map_err(|_|())?;
+        let (decapsulator, encapsulator ) = C::from_seed(seed); //.map_err(|_|())?;
         Ok((IesEncryptorWithKeyWrap::<C,KW,A>{encapsulator, phantom1: PhantomData, phantom2: PhantomData},
             IesDecryptorWithKeyWrap::<C,KW,A>{decapsulator, phantom1: PhantomData, phantom2: PhantomData}))
     }
 }
 
 
-pub struct IesEncryptorWithKeyWrap <C: Capsulator, KW, A: Aead + KeyInit> 
+pub struct IesEncryptorWithKeyWrap <C: Kem, KW, A: Aead + KeyInit> 
 {
-    encapsulator: C::Encapsulator,
+    encapsulator: C::EncapsulationKey,
     phantom1: PhantomData<A>,
     phantom2: PhantomData<KW>,
 } 
 
 
 
-impl<C: Capsulator, A: Aead+KeyInit, KW> FromKey for IesEncryptorWithKeyWrap<C, KW, A> 
+impl<C: Kem, A: Aead+KeyInit, KW> FromKey for IesEncryptorWithKeyWrap<C, KW, A> 
 {
-    type Key = C::Encapsulator;
+    type Key = C::EncapsulationKey;
     fn from_key(key: Self::Key) -> Self {
         Self { encapsulator: key, phantom1: PhantomData, phantom2: PhantomData}
     }
 }
 
-impl<C: Capsulator, A: Aead+KeyInit, KW> SetKdf for IesEncryptorWithKeyWrap<C, KW, A>
-where C::Encapsulator: SetKdf
+impl<C: Kem, A: Aead+KeyInit, KW> SetKdf for IesEncryptorWithKeyWrap<C, KW, A>
+where C::EncapsulationKey: SetKdf
 {
-    type Kdf = <C::Encapsulator as SetKdf>::Kdf;
+    type Kdf = <C::EncapsulationKey as SetKdf>::Kdf;
     fn set_kdf(&mut self, kdf: Self::Kdf )
     {
         self.encapsulator.set_kdf(kdf);
@@ -477,26 +490,26 @@ where C::Encapsulator: SetKdf
 
 impl <C, A, KW> IesEncryptorWithKeyWrap<C, KW, A> 
 where A: Aead + KeyInit,
-    C: Capsulator,
+    C: Kem,
     KW: KeyInit + BlockCipherEncrypt + BlockSizeUser<BlockSize = U16>,
-        <A as aead::AeadCore>::TagSize: ArrayLength,
+        <A as aead::AeadCore>::TagSize: ArraySize,
         A::KeySize: NonZero + Add<U8> + Rem<U8>,
         Sum<A::KeySize, U8>: ArraySize,
         Mod<A::KeySize, U8>: Zero,
-        C: Capsulator<SharedKeySize = KW::KeySize>,
-        C::Encapsulator: EncapsulateWithKeyWrap<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize, LK=A::KeySize>,
+        C: Kem<SharedKeySize = KW::KeySize>,
+        C::EncapsulationKey: EncapsulateWithKeyWrap<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize, LK=A::KeySize>,
 {
-    pub fn seal_detached_encapsulated_key <'msg, 'aad, R: CryptoRng + RngCore> (
+    pub fn seal_detached_encapsulated_key <'msg, 'aad> (
         &self,
-        csprng: &mut R,
+        //csprng: &mut R,
         content_encryption_key: &Array<u8, A::KeySize>,
         pt: impl Into<Payload<'msg, 'aad>>,
         nonce: &Array<u8, A::NonceSize>,
-    ) -> Result<(GenericArray<u8, C::CiphertextSize>, 
-        Array::<u8, <C::Encapsulator as EncapsulateWithKeyWrap<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize>>::LW>,
+    ) -> Result<(Array<u8, C::CiphertextSize>, 
+        Array::<u8, <C::EncapsulationKey as EncapsulateWithKeyWrap<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize>>::LW>,
         Vec<u8>), Error> 
     {
-        let (encapsulated_key, wrapped_cek) = self.encapsulator.encapsulate_and_wrap(csprng, content_encryption_key).map_err(|_|Error::KemError)?;
+        let (encapsulated_key, wrapped_cek) = self.encapsulator.encapsulate_and_wrap(content_encryption_key).map_err(|_|Error::KemError)?;
         let data_encryptor = A::new(content_encryption_key);
 
         let enciphered_data = data_encryptor.encrypt(&nonce, pt)?;
@@ -504,18 +517,18 @@ where A: Aead + KeyInit,
     }
 
     /// Encapsulate and encrypt payload using the provided content encryption key
-    pub fn seal_detached <'msg, 'aad, R: CryptoRng + RngCore> (
+    pub fn seal_detached <'msg, 'aad> (
         &self,
-        csprng: &mut R,
+        //csprng: &mut R,
         content_encryption_key: &Array<u8, A::KeySize>,
         pt: impl Into<Payload<'msg, 'aad>>,
         nonce: &Nonce<A>,
-    ) -> Result<(GenericArray<u8, C::CiphertextSize>, 
-        Array::<u8, <C::Encapsulator as EncapsulateWithKeyWrap<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize>>::LW>,
+    ) -> Result<(Array<u8, C::CiphertextSize>, 
+        Array::<u8, <C::EncapsulationKey as EncapsulateWithKeyWrap<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize>>::LW>,
         Vec<u8>, 
         Tag<A>), Error>
     {
-        let (encapsulated_key, wrapped_cek, mut enciphered_data) = self.seal_detached_encapsulated_key(csprng, content_encryption_key, pt, nonce)?;
+        let (encapsulated_key, wrapped_cek, mut enciphered_data) = self.seal_detached_encapsulated_key(content_encryption_key, pt, nonce)?;
 
         let tag = enciphered_data.drain((enciphered_data.len() - A::TagSize::USIZE)..);
         let tag2 = Array::from_iter(tag);
@@ -526,15 +539,15 @@ where A: Aead + KeyInit,
     /// Function which encrypts a ciphertext and returns a blob to be transferred to the recipient.
     /// The blob contains the encapsulated key, wrapped cek, enciphered data and tag 
     /// 
-    pub fn seal <'msg, 'aad, R: CryptoRng + RngCore> (
+    pub fn seal <'msg, 'aad> (
         &self,
-        csprng: &mut R,
+        //csprng: &mut R,
         content_encryption_key: &Array<u8, A::KeySize>,
         pt: impl Into<Payload<'msg, 'aad>>,
         nonce: &Array<u8, A::NonceSize>,
     ) -> Result<Vec<u8>, Error> 
     {
-        let (encapsulated_key, wrapped_cek, enciphered_data) = self.seal_detached_encapsulated_key(csprng, content_encryption_key, pt, nonce)?;
+        let (encapsulated_key, wrapped_cek, enciphered_data) = self.seal_detached_encapsulated_key(content_encryption_key, pt, nonce)?;
         Ok ([encapsulated_key.as_slice(), wrapped_cek.as_slice(), enciphered_data.as_slice()].concat())
     }
 
@@ -545,14 +558,14 @@ where A: Aead + KeyInit,
 
 impl <C, A, KW> IesEncryptorWithKeyWrap<C, KW, A> 
 where A: Aead + KeyInit,
-    C: Capsulator,
+    C: Kem,
     KW: KeyInit + BlockCipherEncrypt + BlockSizeUser<BlockSize = U16>,
-        A::TagSize: ArrayLength, //u8>,
+        A::TagSize: ArraySize, //u8>,
         A::KeySize: NonZero + Add<U8> + Rem<U8>,
         Sum<A::KeySize, U8>: ArraySize,
         Mod<A::KeySize, U8>: Zero,
-        C: Capsulator<SharedKeySize = KW::KeySize>,
-        C::Encapsulator: EncapsulateWithKeyWrapDeterministic<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize, LK=A::KeySize>,
+        C: Kem<SharedKeySize = KW::KeySize>,
+        C::EncapsulationKey: EncapsulateWithKeyWrapDeterministic<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize, LK=A::KeySize>,
 {
 
     pub fn seal_detached_encapsulated_key_deterministic <'msg, 'aad> (
@@ -562,10 +575,10 @@ where A: Aead + KeyInit,
         content_encryption_key: &Array<u8, A::KeySize>,
         pt: impl Into<Payload<'msg, 'aad>>,
         nonce: &Array<u8, A::NonceSize>,
-    ) -> Result<(GenericArray<u8, C::CiphertextSize>, 
-        Array::<u8, <C::Encapsulator as EncapsulateWithKeyWrapDeterministic<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize>>::LW>,
+    ) -> Result<(Array<u8, C::CiphertextSize>, 
+        Array::<u8, <C::EncapsulationKey as EncapsulateWithKeyWrapDeterministic<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize>>::LW>,
         Vec<u8>), Error> 
-    where C::Encapsulator: EncapsulateDeterministic2<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>
+    where C::EncapsulationKey: EncapsulateDeterministic
     {
         let (encapsulated_key, wrapped_cek) = self.encapsulator.encapsulate_and_wrap_deterministic(seed, content_encryption_key).map_err(|_|Error::KemError)?;
         let data_encryptor = A::new(content_encryption_key);
@@ -575,27 +588,27 @@ where A: Aead + KeyInit,
 }
 
 
-pub struct IesDecryptorWithKeyWrap <C: Capsulator, KW, A: Aead + KeyInit> 
+pub struct IesDecryptorWithKeyWrap <C: Kem, KW, A: Aead + KeyInit> 
 {
-    decapsulator: C::Decapsulator,
+    decapsulator: C::DecapsulationKey,
     phantom1: PhantomData<A>,
     phantom2: PhantomData<KW>,
 } 
 
 
-impl<C: Capsulator, A: Aead+KeyInit, KW> FromKey for IesDecryptorWithKeyWrap<C, KW, A> 
+impl<C: Kem, A: Aead+KeyInit, KW> FromKey for IesDecryptorWithKeyWrap<C, KW, A> 
 {
-    type Key = C::Decapsulator;
+    type Key = C::DecapsulationKey;
     fn from_key(key: Self::Key) -> Self {
         Self { decapsulator: key, phantom1: PhantomData, phantom2: PhantomData}
     }
 }
 
 
-impl<C: Capsulator, A: Aead+KeyInit, KW> SetKdf for IesDecryptorWithKeyWrap<C, KW, A> 
-where C::Decapsulator: SetKdf
+impl<C: Kem, A: Aead+KeyInit, KW> SetKdf for IesDecryptorWithKeyWrap<C, KW, A> 
+where C::DecapsulationKey: SetKdf
 {
-    type Kdf = <C::Decapsulator as SetKdf>::Kdf;
+    type Kdf = <C::DecapsulationKey as SetKdf>::Kdf;
     fn set_kdf(&mut self, kdf: Self::Kdf )
     {
         self.decapsulator.set_kdf(kdf);
@@ -607,18 +620,18 @@ where C::Decapsulator: SetKdf
 /// 
 impl <'msg, 'aad, C, A, KW> IesDecryptorWithKeyWrap<C, KW, A> 
 where A: Aead + KeyInit,
-    C: Capsulator,
+    C: Kem,
     KW: KeyInit + BlockCipherDecrypt + BlockSizeUser<BlockSize = U16>,
-    C: Capsulator<SharedKeySize = KW::KeySize>,
-    C::Decapsulator: DecapsulateWithKeyWrap<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize, LK=A::KeySize>,
+    C: Kem<SharedKeySize = KW::KeySize>,
+    C::DecapsulationKey: TryDecapsulateWithKeyWrap<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize, LK=A::KeySize>,
 {
     ///
     /// Opening of a payload where the encapped_key and encrypted_key are separate fields, but the tag is embedded into the ct
     /// 
     pub fn open_semi_detached(
         &self, 
-        encapped_key: &GenericArray<u8, C::CiphertextSize>,
-        encrypted_key: &Array<u8, <C::Decapsulator as DecapsulateWithKeyWrap<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize>>::LW>,
+        encapped_key: &Array<u8, C::CiphertextSize>,
+        encrypted_key: &Array<u8, <C::DecapsulationKey as TryDecapsulateWithKeyWrap<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize>>::LW>,
         ct: impl Into<Payload<'msg, 'aad>>,
         nonce: &Nonce<A>,
     ) -> Result<Vec<u8>, Error>
@@ -634,8 +647,8 @@ where A: Aead + KeyInit,
     ///  
     pub fn open_detached(
         &self, 
-        encapped_key: &GenericArray<u8, C::CiphertextSize>,
-        encrypted_key: &Array<u8, <C::Decapsulator as DecapsulateWithKeyWrap<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize>>::LW>,
+        encapped_key: &Array<u8, C::CiphertextSize>,
+        encrypted_key: &Array<u8, <C::DecapsulationKey as TryDecapsulateWithKeyWrap<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>, AesKw<KW>, A::KeySize>>::LW>,
         ct: impl Into<Payload<'msg, 'aad>>,
         tag: &Tag<A>,
         nonce: &Nonce<A>,
@@ -659,52 +672,52 @@ where A: Aead + KeyInit,
         let (encapsulated_key, rem) = payload.msg.split_at(C::CiphertextSize::USIZE);
         let (encrypted_key, rem) = rem.split_at(KW::KeySize::USIZE);
         let (encrypted_msg, tag) = rem.split_at(rem.len() - A::TagSize::USIZE);
-        self.open_detached(GenericArray::from_slice(encapsulated_key), &Array::try_from(encrypted_key)?, Payload { msg: encrypted_msg, aad: payload.aad}, &Array::try_from(tag)?, nonce)
+        self.open_detached(encapsulated_key.try_into().unwrap(), &Array::try_from(encrypted_key)?, Payload { msg: encrypted_msg, aad: payload.aad}, &Array::try_from(tag)?, nonce)
     }
        
 }
 
 
 /// Implementaiton of an IES where the shared secret is used for both symmetric encryption key and the IV
-pub struct IesWithDerivedIv<C: Capsulator, A: Aead + KeyInit> ( PhantomData<C>, PhantomData<A>);
+pub struct IesWithDerivedIv<C: Kem, A: Aead + KeyInit> ( PhantomData<C>, PhantomData<A>);
 
-impl<C: Capsulator, A: Aead + KeyInit> Ies<C> for IesWithDerivedIv<C,A> 
+impl<C: Kem, A: Aead + KeyInit> Ies<C> for IesWithDerivedIv<C,A> 
 {
     type Decryptor = IesDecryptorWithDerivedIv<C,A>;
     type Encryptor = IesEncryptorWithDerivedIv<C,A>;
 }
 
 
-pub struct IesEncryptorWithDerivedIv <C: Capsulator, A: Aead + KeyInit> 
+pub struct IesEncryptorWithDerivedIv <C: Kem, A: Aead + KeyInit> 
 {
-    encapsulator: C::Encapsulator,
+    encapsulator: C::EncapsulationKey,
     phantom1: PhantomData<A>,
 } 
 
-impl<C: Capsulator, A: Aead+KeyInit> FromKey for IesEncryptorWithDerivedIv<C,A>
+impl<C: Kem, A: Aead+KeyInit> FromKey for IesEncryptorWithDerivedIv<C,A>
 {
-    type Key = C::Encapsulator;
+    type Key = C::EncapsulationKey;
     fn from_key(key: Self::Key) -> Self {
         Self { encapsulator: key, phantom1: PhantomData}
     }
 }
 
-impl<C: Capsulator, A: Aead + KeyInit> IesEncryptorWithDerivedIv<C, A>
+impl<C: Kem, A: Aead + KeyInit> IesEncryptorWithDerivedIv<C, A>
 {
     ///
     /// Function which returns the encapsulated key and encrypted data in two separate values
     /// The encrypted data includes the authentication tag
     /// 
-    pub fn seal_semi_detached <'msg, 'aad, R: CryptoRng + RngCore> (
+    pub fn seal_semi_detached <'msg, 'aad> (
         &self,
-        csprng: &mut R,
+        //csprng: &mut R,
         pt: impl Into<Payload<'msg, 'aad>>,
-    ) -> Result<(GenericArray<u8, C::CiphertextSize>, Vec<u8>), Error> 
+    ) -> Result<(Array<u8, C::CiphertextSize>, Vec<u8>), Error> 
     where 
         C::SharedKeySize: Sub<A::KeySize, Output=A::NonceSize>,
         Diff<C::SharedKeySize, A::KeySize>: ArraySize
     {
-        let (encapsulated_key, shared_secret) = self.encapsulator.encapsulate(csprng).map_err(|_|Error::KemError)?;
+        let (encapsulated_key, shared_secret) = self.encapsulator.encapsulate(); //.map_err(|_|Error::KemError)?;
         let (shared_secret_key, nonce) = shared_secret.split_ref::<A::KeySize>();
         let encryptor = A::new(shared_secret_key);
         
@@ -714,42 +727,50 @@ impl<C: Capsulator, A: Aead + KeyInit> IesEncryptorWithDerivedIv<C, A>
     ///
     /// Function which combines all data into a single return buffer
     /// 
-    pub fn seal <'msg, 'aad, R: CryptoRng + RngCore> (
+    pub fn seal <'msg, 'aad> (
         &self,
-        csprng: &mut R,
+        //csprng: &mut R,
         pt: impl Into<Payload<'msg, 'aad>>
     ) -> Result<Vec<u8>, Error> 
     where C::SharedKeySize: Sub<A::KeySize, Output=A::NonceSize>,
         Diff<C::SharedKeySize, A::KeySize>: ArraySize
     {
-        let ( encapsulated_key, encrypted_data ) = self.seal_semi_detached(csprng, pt)?;
+        let ( encapsulated_key, encrypted_data ) = self.seal_semi_detached(pt)?;
         return Ok ([encapsulated_key.as_slice(), encrypted_data.as_slice()].concat());
     }
 
     pub fn seal_semi_detached_deterministic <'msg, 'aad> (
         &self,
-        seed: &Array<u8, <C::Encapsulator as EncapsulateDeterministic2<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>>::SeedSize>,
+        //seed: &Array<u8, <C::EncapsulationKey as EncapsulateDeterministicN /*,<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>> */>::SeedSize>,
+        seed: &[u8],
         pt: impl Into<Payload<'msg, 'aad>>,
-    ) -> Result<(GenericArray<u8, C::CiphertextSize>, Vec<u8>), Error> 
-    where C::Encapsulator: EncapsulateDeterministic2<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>,
+    ) -> Result<(Array<u8, C::CiphertextSize>, Vec<u8>), Error> 
+    where C::EncapsulationKey: EncapsulateDeterministic, //2<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>,
         C::SharedKeySize: Sub<A::KeySize, Output=A::NonceSize>,
+        <<<C as Kem>::EncapsulationKey as EncapsulateDeterministic>::Kem as Kem>::SharedKeySize: Sub<A::NonceSize>,
+        <<<C as Kem>::EncapsulationKey as EncapsulateDeterministic>::Kem as Kem>::SharedKeySize: Sub<<A as KeySizeUser>::KeySize, Output=A::NonceSize>,
+        <<<<C as Kem>::EncapsulationKey as EncapsulateDeterministic>::Kem as Kem>::SharedKeySize as Sub<<A as KeySizeUser>::KeySize>>::Output: ArraySize,
         Diff<C::SharedKeySize, A::KeySize>: ArraySize
     {
-        let (encapsulated_key, shared_secret) = self.encapsulator.encapsulate_deterministic(seed).map_err(|_|Error::KemError)?;
+        let (encapsulated_key, shared_secret) = self.encapsulator.encapsulate_deterministic(seed); //.map_err(|_|Error::KemError)?;
         
         let (shared_secret_key, nonce) = shared_secret.split_ref::<A::KeySize>();
         let encryptor = A::new(shared_secret_key);
         
-        Ok((encapsulated_key, encryptor.encrypt(nonce, pt)?))
+        Ok((encapsulated_key.as_slice().try_into().unwrap(), encryptor.encrypt(nonce, pt)?))
     }
 
     pub fn seal_deterministic <'msg, 'aad> (
         &self,
-        seed: &Array<u8, <C::Encapsulator as EncapsulateDeterministic2<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>>::SeedSize>,
+        //seed: &Array<u8, <C::EncapsulationKey as EncapsulateDeterministic2<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>>::SeedSize>,
+        seed: &[u8],
         pt: impl Into<Payload<'msg, 'aad>>,
     ) -> Result<Vec<u8>, Error> 
-    where C::Encapsulator: EncapsulateDeterministic2<GenericArray<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>,
+    where C::EncapsulationKey: EncapsulateDeterministic, //2<Array<u8, C::CiphertextSize>, Array<u8, C::SharedKeySize>>,
         C::SharedKeySize: Sub<A::KeySize, Output=A::NonceSize>,
+        <<<C as Kem>::EncapsulationKey as EncapsulateDeterministic>::Kem as Kem>::SharedKeySize: Sub<A::NonceSize>,
+        <<<C as Kem>::EncapsulationKey as EncapsulateDeterministic>::Kem as Kem>::SharedKeySize: Sub<<A as KeySizeUser>::KeySize, Output=A::NonceSize>,
+        <<<<C as Kem>::EncapsulationKey as EncapsulateDeterministic>::Kem as Kem>::SharedKeySize as Sub<<A as KeySizeUser>::KeySize>>::Output: ArraySize,
         Diff<C::SharedKeySize, A::KeySize>: ArraySize
     {
         let (encapsulated_key, encrypted_data) = self.seal_semi_detached_deterministic(seed, pt)?; 
@@ -762,22 +783,22 @@ impl<C: Capsulator, A: Aead + KeyInit> IesEncryptorWithDerivedIv<C, A>
 
 
 /// Integrated encryption scheme where both the encryption key and IV are extracted from the shared secret
-pub struct IesDecryptorWithDerivedIv <C: Capsulator, A: Aead + KeyInit> 
+pub struct IesDecryptorWithDerivedIv <C: Kem, A: Aead + KeyInit> 
 {
-    decapsulator: C::Decapsulator,
+    decapsulator: C::DecapsulationKey,
     phantom1: PhantomData<A>,
 } 
 
-impl<C: Capsulator, A: Aead+KeyInit> FromKey for IesDecryptorWithDerivedIv<C,A>
+impl<C: Kem, A: Aead+KeyInit> FromKey for IesDecryptorWithDerivedIv<C,A>
 {
-    type Key = C::Decapsulator;
+    type Key = C::DecapsulationKey;
     fn from_key(key: Self::Key) -> Self {
         Self { decapsulator: key, phantom1: PhantomData}
     }
 }
 
-impl<C: Capsulator, A: Aead + KeyInit> IesDecryptorWithDerivedIv<C, A>
-where C: Capsulator<SharedKeySize=Sum<A::KeySize, A::NonceSize>>,
+impl<C: Kem, A: Aead + KeyInit> IesDecryptorWithDerivedIv<C, A>
+where C: Kem<SharedKeySize=Sum<A::KeySize, A::NonceSize>>,
     C::SharedKeySize: Sub<A::KeySize>,
     Diff<C::SharedKeySize, A::KeySize>: ArraySize,
     A::KeySize: Add<A::NonceSize>,
@@ -790,12 +811,12 @@ where C: Capsulator<SharedKeySize=Sum<A::KeySize, A::NonceSize>>,
     /// 
     pub fn open_semi_detached<'msg, 'aad>(
         &self, 
-        encapped_key: &GenericArray<u8, C::CiphertextSize>,
+        encapped_key: &Array<u8, C::CiphertextSize>,
         ct: impl Into<Payload<'msg, 'aad>>,
     ) -> Result<Vec<u8>, Error>
 
     {
-        let shared_secret = self.decapsulator.decapsulate(encapped_key).map_err(|_|Error::KemError)?;
+        let shared_secret = self.decapsulator.try_decapsulate(encapped_key).map_err(|_|Error::KemError)?;
         let ( key, nonce ) = shared_secret.split_ref::<A::KeySize>();
         let encryptor = A::new(key);
         Ok(encryptor.decrypt(nonce.as_slice().try_into()?, ct)?)
@@ -810,7 +831,7 @@ where C: Capsulator<SharedKeySize=Sum<A::KeySize, A::NonceSize>>,
     {
         let encrypted_msg_as_payload: Payload = encrypted_msg.into();
         let (encapped_key_bytes, ciphertext) = encrypted_msg_as_payload.msg.split_at_checked(C::CiphertextSize::USIZE).ok_or(Error::LenError)?;
-        return self.open_semi_detached(GenericArray::from_slice(encapped_key_bytes), Payload{msg:ciphertext, aad: encrypted_msg_as_payload.aad})
+        return self.open_semi_detached(encapped_key_bytes.try_into().unwrap(), Payload{msg:ciphertext, aad: encrypted_msg_as_payload.aad})
     }
 }
 

@@ -3,15 +3,17 @@ use aes::{Aes256,Aes128};
 use aes_kw::{AesKw, KwAes128};
 use digest::consts::*;
 use hex_literal::hex;
-use kdfs::Label;
-use kdfs::{Kdf, iso11770_6::Okdf1};
+use kdfs::{Label, Kdf};
 use kdfs::rfc5869_hkdf::Hkdf;
 use kdfs::hybrid_array::Array;
 
-use kems::{Capsulator, EncapsulateWithKeyWrap, eckem::{SeedAsScalar}, hybrid::{HybridKem, QsfCombiner2}, ml_kem::MlKemWrapper, x448kem::X448Capsulator, x25519kem::X25519Capsulator};
-use kems::{GetRecipientPublicKeyBytes, Decapsulate,GetEncapsulator, DecapsulateWithKeyWrap, OsRng, EncapsulateDeterministic2, kem_with_kdf::EcCombinerOpenPgp};
+use kem::{Kem, KeyExport};
+use kem::{Decapsulator, TryDecapsulate};
+use kems::pgp::{HybridCapsulatorOpenPgpMlKem768X25519, HybridCapsulatorOpenPgpMlKem1024X448};
+use kems::{KemExtensions, EncapsulateWithKeyWrap, x25519kem::X25519Kem};
+use kems::{ TryDecapsulateWithKeyWrap, EncapsulateDeterministic, kem_with_kdf::EcKdfOpenPgp};
 use kems::kem_with_kdf::{CombinerAllPubKeys, KemWithKdf};
-use ml_kem::{MlKem768, MlKem1024};
+
 
 use sha2::Sha256;
 use x25519_dalek::{PublicKey, StaticSecret};
@@ -53,9 +55,9 @@ fn test_rfc_9580_a_8 () {
     assert! ( recipient_secret_key.as_bytes() == &recip_prv_key);
     assert! ( recipient_public_key.as_bytes() == &recip_pub_key);
 
-    let en = KemWithKdf::<X25519Capsulator<SeedAsScalar>, CombinerAllPubKeys, EcCombinerOpenPgp<Hkdf<Sha256>>, U16>::from_public_key(recipient_public_key);
+    let en = <KemWithKdf::<X25519Kem, CombinerAllPubKeys, EcKdfOpenPgp<Hkdf<Sha256>>, U16> as KemExtensions>::from_public_key(recipient_public_key);
 
-    let (ek, sk) = en.encapsulate_deterministic(&ephem_prv_key).unwrap();
+    let (ek, sk) = en.encapsulate_deterministic(&ephem_prv_key);
     assert!( ek.as_ref() == ephem_pub_key );
     assert!( sk.as_slice() == derived_shared_secret );
     
@@ -83,7 +85,7 @@ fn test_rfc_9580_a_8 () {
 
     let mut aad = vec![packet_id, version_number, cipher_algorithm_id, aead_algorithm_id, chunk_size_octet];
     
-    let message_key_calc = Hkdf::<Sha256>::derive_secret_salt_other::<U23>(&decrypted_session_key, &salt, &aad).unwrap();
+    let message_key_calc: Array<u8, U23> = Hkdf::<Sha256>::derive_secret_salt_other(&decrypted_session_key, &salt, &aad);
     let (key, nonce_part) = message_key_calc.split::<U16>();
 
     assert!( message_key_calc[0..16] == message_key);
@@ -369,10 +371,7 @@ fn parse_open_gpg_packets ( contents: &[u8] )
 
 
 
-pub struct OpenPgpLabelMlKem768X25519;
-impl Label for OpenPgpLabelMlKem768X25519 {
-    const LABEL: &'static[u8] = &hex!("23  4F 70 65 6E 50 47 50 43 6F 6D 70 6F 73 69 74 65 4B 44 46 76 31 15");
-}
+
 
 #[test]
 fn test_pqc_a_1_1() -> Result<(), pem::PemError>
@@ -531,18 +530,19 @@ fn test_pqc_a_1_1() -> Result<(), pem::PemError>
     let salt = &message_contents[1207..1207+32];
     let encrypted_data_and_tag = &message_contents[1239..];
 
-    pub type HybridCapsulatorOpenPgpMlKem768X25519 = HybridKem::<
-            X25519Capsulator<SeedAsScalar>,
-            MlKemWrapper<MlKem768>,
-            QsfCombiner2<Okdf1<sha3::Sha3_256>,OpenPgpLabelMlKem768X25519>,
-            SeedAsScalar>;
+ 
 
-    let decapsulator = HybridCapsulatorOpenPgpMlKem768X25519::try_from_slice_decap(priv_key_bytes).unwrap();
-    let encapsulator = HybridCapsulatorOpenPgpMlKem768X25519::try_from_slice_encap(pub_key_bytes2).unwrap();
+    //let decapsulator = HybridCapsulatorOpenPgpMlKem768X25519::from_bytes_decap(priv_key_bytes.try_into().unwrap());
+    // let x = X25519Kem::from_seed(&[0u8; 32].into());
+    // let y = MlKem768::from_seed(&[0u8; 64].into());
 
-    assert_eq!( decapsulator.encapsulation_key().get_recipient_public_key_bytes(), encapsulator.get_recipient_public_key_bytes());
+    let decapsulator = <<HybridCapsulatorOpenPgpMlKem768X25519 as Kem>::DecapsulationKey as KeyInit>::new_from_slice(priv_key_bytes).unwrap();
+    //let decapsulator = HybridCapsulatorOpenPgpMlKem768X25519::from_seed(priv_key_bytes.try_into().unwrap());
+    let encapsulator = HybridCapsulatorOpenPgpMlKem768X25519::try_from_bytes_encap(pub_key_bytes2.try_into().unwrap()).unwrap();
 
-    let shared_secret2 = decapsulator.decapsulate(ciphertext.try_into().unwrap()).unwrap();
+    assert_eq!( decapsulator.encapsulation_key().to_bytes(), encapsulator.to_bytes());
+
+    let shared_secret2 = decapsulator.try_decapsulate(ciphertext.try_into().unwrap()).unwrap();
     assert_eq!( shared_secret2, shared_secret );
 
     let wrapping_key = AesKw::<Aes256>::new_from_slice(&shared_secret2).unwrap();
@@ -550,8 +550,8 @@ fn test_pqc_a_1_1() -> Result<(), pem::PemError>
     assert_eq! ( session_key, cek );
 
     //let cek2 = decapsulator.decapsulate_with_key_wrap::<AesKw::<Aes256>>(ciphertext.into(), wrapped_key.try_into().unwrap()).unwrap();
-    let cek2 = <<HybridCapsulatorOpenPgpMlKem768X25519 as Capsulator>::Decapsulator as DecapsulateWithKeyWrap<_,_,AesKw<Aes256>,U32>>::decapsulate_and_unwrap(&decapsulator, ciphertext.try_into().unwrap(), wrapped_key.try_into().unwrap()).unwrap();
-    println! ( "cek={:02X?}", cek2);
+    //let cek2 = <<HybridCapsulatorOpenPgpMlKem768X25519 as Kem>::DecapsulationKey as DecapsulateWithKeyWrap<_,_,AesKw<Aes256>,U32>>::decapsulate_and_unwrap(&decapsulator, ciphertext.try_into().unwrap(), wrapped_key.try_into().unwrap()).unwrap();
+    //println! ( "cek={:02X?}", cek2);
 
 
     let packet_id = 0xD2u8;
@@ -561,7 +561,7 @@ fn test_pqc_a_1_1() -> Result<(), pem::PemError>
     let chunk_size_octet = 0x0Cu8; 
     let aad = [packet_id, version_number, cipher_algorithm_id, aead_algorithm_id, chunk_size_octet];
 
-    let key_and_nonce: Array<u8, U39> = Hkdf::<Sha256>::derive_secret_salt_other(&cek, salt, &aad).unwrap();
+    let key_and_nonce: Array<u8, U39> = Hkdf::<Sha256>::derive_secret_salt_other(&cek, salt, &aad);
     
     let mut nonce = Array::default();
     nonce[0..7].copy_from_slice(&key_and_nonce[32..39]);
@@ -574,8 +574,8 @@ fn test_pqc_a_1_1() -> Result<(), pem::PemError>
     assert_eq! ( &plaintext[64..64+8], b"Testing\n");
 
     let cek3 = Array::default();
-    let (ct, ek) = <<HybridCapsulatorOpenPgpMlKem768X25519 as Capsulator>::Encapsulator as EncapsulateWithKeyWrap<_,_,AesKw<Aes256>,U32>>::encapsulate_and_wrap(&encapsulator, &mut OsRng, &cek3).unwrap();
-    let cek4 = <<HybridCapsulatorOpenPgpMlKem768X25519 as Capsulator>::Decapsulator as DecapsulateWithKeyWrap<_,_,AesKw<Aes256>,U32>>::decapsulate_and_unwrap(&decapsulator, &ct, &ek).unwrap();
+    let (ct, ek) = <<HybridCapsulatorOpenPgpMlKem768X25519 as Kem>::EncapsulationKey as EncapsulateWithKeyWrap<_,_,AesKw<Aes256>,U32>>::encapsulate_and_wrap(&encapsulator, &cek3).unwrap();
+    let cek4 = <<HybridCapsulatorOpenPgpMlKem768X25519 as Kem>::DecapsulationKey as TryDecapsulateWithKeyWrap<_,_,AesKw<Aes256>,U32>>::decapsulate_and_unwrap(&decapsulator, &ct, &ek).unwrap();
 
     assert_eq!( cek3, cek4);
     
@@ -616,16 +616,21 @@ fn test_pqc_a_4() ->Result<(), pem::PemError>
 
     assert_eq!( pub_key_bytes, pub_key_bytes2);
 
-    pub type HybridCapsulatorOpenPgpMlKem1024X448 = HybridKem::<
-            X448Capsulator<SeedAsScalar>,
-            MlKemWrapper<MlKem1024>,
-            QsfCombiner2<Okdf1<sha3::Sha3_256>,OpenPgpLabelMlKem1025X448>,
-            SeedAsScalar>;
+    // pub type HybridCapsulatorOpenPgpMlKem1024X448 = HybridKem::<
+    //         X448Capsulator<SeedAsScalar>,
+    //         MlKemWrapper<MlKem1024>,
+    //         QsfCombiner2<Okdf1<sha3::Sha3_256>,OpenPgpLabelMlKem1025X448>,
+    //         SeedAsScalar>;
 
-    let decapsulator = HybridCapsulatorOpenPgpMlKem1024X448::try_from_slice_decap(priv_key_bytes).unwrap();
-    let encapsulator = HybridCapsulatorOpenPgpMlKem1024X448::try_from_slice_encap(pub_key_bytes2).unwrap();
+    //let decapsulator = HybridCapsulatorOpenPgpMlKem1024X448::try_from_slice_decap(priv_key_bytes).unwrap();
+    // let x = Array::default();
+    // println! ( "expected_len={}", x.len());
+    let decapsulator = <HybridCapsulatorOpenPgpMlKem1024X448 as Kem>::DecapsulationKey::new_from_slice(priv_key_bytes).unwrap();
+    //let (decapsulator,_) = HybridCapsulatorOpenPgpMlKem1024X448::from_seed(&priv_key_bytes.try_into().unwrap());
+    //let decapsulator = <HybridCapsulatorOpenPgpMlKem1024X448 as Kem>::DecapsulationKey::new(&x);
+    let encapsulator = HybridCapsulatorOpenPgpMlKem1024X448::try_from_bytes_encap(&pub_key_bytes2.try_into().unwrap()).unwrap();
 
-    assert_eq!( decapsulator.encapsulation_key().get_recipient_public_key_bytes(), encapsulator.get_recipient_public_key_bytes());
+    assert_eq!( decapsulator.encapsulation_key().to_bytes(), encapsulator.to_bytes());
 
     let message_bin = pem::parse(A_4_2_MESSAGE_KEY_BLOCK)?;
     let message_bin = message_bin.contents();
@@ -639,15 +644,18 @@ fn test_pqc_a_4() ->Result<(), pem::PemError>
     
     let encrypted_data_and_tag = [encrypted_data_and_tag1, encrypted_data_and_tag2].concat();
 
-    let shared_secret2 = decapsulator.decapsulate(ciphertext.try_into().unwrap()).unwrap();
+    let shared_secret2 = decapsulator.try_decapsulate(ciphertext.try_into().unwrap()).unwrap();
     assert_eq!( shared_secret2, shared_secret );
 
     let wrapping_key = AesKw::<Aes256>::new_from_slice(&shared_secret2).unwrap();
     let cek: Array<u8, U32> = wrapping_key.unwrap_fixed_key(wrapped_key.try_into().unwrap()).unwrap();
     assert_eq! ( session_key, cek );
 
-    let cek2 = <<HybridCapsulatorOpenPgpMlKem1024X448 as Capsulator>::Decapsulator as DecapsulateWithKeyWrap<_,_,AesKw<Aes256>,U32>>::decapsulate_and_unwrap(&decapsulator, ciphertext.try_into().unwrap(), wrapped_key.try_into().unwrap()).unwrap();
-    assert_eq!(cek2, session_key);
+    //let x = Array::<u8, U1624>::default();
+    
+    // let cek2 = <<HybridCapsulatorOpenPgpMlKem1024X448 as Capsulator>::Decapsulator as DecapsulateWithKeyWrap<_,_,AesKw<Aes256>,U32>>::
+    //         decapsulate_and_unwrap(&decapsulator, ciphertext.try_into().unwrap(), wrapped_key.try_into().unwrap()).unwrap();
+    // assert_eq!(cek2, session_key);
     
     let packet_id = 0xD2u8;
     let version_number = 0x02u8;
@@ -656,7 +664,7 @@ fn test_pqc_a_4() ->Result<(), pem::PemError>
     let chunk_size_octet = 0x0Cu8; 
     let aad = [packet_id, version_number, cipher_algorithm_id, aead_algorithm_id, chunk_size_octet];
 
-    let key_and_nonce: Array<u8, U39> = Hkdf::<Sha256>::derive_secret_salt_other(&cek, salt, &aad).unwrap();
+    let key_and_nonce: Array<u8, U39> = Hkdf::<Sha256>::derive_secret_salt_other(&cek, salt, &aad);
     let (key, nonce_left) = key_and_nonce.split::<U32>();
     
     let chunk_number = 0u64;

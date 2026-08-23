@@ -9,13 +9,14 @@ use ies::Ies;
 use ies::ies_types::{EciesJweP256A128CbcHs256, EciesP384A256KwJweA128CbcHs256};
 use ies::{ies_types::{RsaesOaepJweA256Gcm,RsaesPkcs15IesJweA128CbcHS256}, rfc7518::A128CbcHS256};
 use kdfs::hybrid_array::Array;
-use kems::{Capsulator, OsRng, SetKdf, EncapsulateDeterministic2};
+use kem::{Decapsulate};
+use kems::EncapsulateDeterministic;
+use kems::{KemExtensions, SetKdf};
 use kems::kem_with_kdf::{JwaKdf};
 use kems::jwe::{JweKemP256Sha256, JweKemP384Sha256};
 use kems::rsakem::{RsaPkcs15Kem, RsaOaepKem};
-use kems::generic_array::GenericArray;
+
 //use ml_kem::kem::{Decapsulate};
-use kems::Decapsulate;
 use rsa::{RsaPrivateKey, RsaPublicKey, BoxedUint};
 use serde_json::Value;
 use sha1::Sha1;
@@ -145,15 +146,15 @@ fn test_rfc_7518_appendix_c_ec_es (){
     let jwa_kdf_send =  JwaKdf::new(enc, &apu, &apv);
     let mut encapsulator = JweKemP256Sha256::<U16>::try_from_slice_encap(&[bob_x, bob_y].concat()).unwrap();
     encapsulator.set_kdf(jwa_kdf_send);
-    let (c0_send, k_send) = encapsulator.encapsulate_deterministic(&alice_eph_bytes).unwrap();
-    assert! ( k_send == derived_key );
+    let (c0_send, k_send) = encapsulator.encapsulate_deterministic(&alice_eph_bytes);
+    assert_eq! ( k_send, derived_key );
     
     // Decapsulate at the receiver
     let jwa_kdf_recv = JwaKdf::new(enc, &apu, &apv);
     let mut decapsulator = JweKemP256Sha256::<U16>::try_from_slice_decap(&bob_d).unwrap();
     decapsulator.set_kdf(jwa_kdf_recv);
 
-    let k_recv = decapsulator.decapsulate(&c0_send).unwrap();
+    let k_recv = decapsulator.decapsulate(&c0_send);
     assert! ( k_recv == derived_key);
 }
 
@@ -229,14 +230,16 @@ fn test_rfc_7520_5_5_ecies () {
     let eph_bytes = BASE64_URL_SAFE_NO_PAD.decode(&eph_json["d"].as_str().unwrap()).unwrap();
 
     let jwe_protected_header2: Value = serde_json::from_str(jwe_protected_header).unwrap();
-    let enc = jwe_protected_header2["enc"].as_str().unwrap().as_bytes();
+    let enc2 = jwe_protected_header2["enc"].as_str().unwrap();
+    
+    //let enc = enc.as_str().unwrap().as_bytes();
     let epk_x = BASE64_URL_SAFE_NO_PAD.decode(jwe_protected_header2["epk"]["x"].as_str().unwrap().as_bytes()).unwrap();
     let epk_y = BASE64_URL_SAFE_NO_PAD.decode(jwe_protected_header2["epk"]["y"].as_str().unwrap().as_bytes()).unwrap();
 
     let mut encapsulator = JweKemP256Sha256::try_from_slice_encap(&[recip_x.as_slice(), recip_y.as_slice()].concat()).unwrap();
-    encapsulator.set_kdf(JwaKdf::new(enc, b"", b""));
+    encapsulator.set_kdf(JwaKdf::new(enc2.as_bytes(), b"", b""));
 
-    let (c0_send, k_send ) = encapsulator.encapsulate_deterministic(&eph_bytes).unwrap();
+    let (c0_send, k_send ) = encapsulator.encapsulate_deterministic(&eph_bytes);
     assert_eq!( k_send.as_slice(), &BASE64_URL_SAFE_NO_PAD.decode(cek_base64).unwrap() );
     assert_eq!( c0_send.as_slice(), &[epk_x.as_slice(), epk_y.as_slice()].concat());
 
@@ -252,9 +255,11 @@ fn test_rfc_7520_5_5_ecies () {
     let rx = res.decrypt_detached(&iv, Payload{msg: &ctx1, aad: jwe_protected_header_base64.as_bytes()}, &tag1).unwrap();
     assert! ( rx == plaintext.as_bytes());
 
+    let enc = "A128CBC-HS256"; //enc2.to_string();
+    
     // Repeat using Ecies struct
     let mut hybrid_encryptor = EciesJweP256A128CbcHs256::try_from_slice_encap(&[recip_x.as_slice(), recip_y.as_slice()].concat()).unwrap();
-    hybrid_encryptor.set_kdf ( JwaKdf::new(enc, b"", b""));
+    hybrid_encryptor.set_kdf ( JwaKdf::new(enc.as_bytes(), b"", b""));
     hybrid_encryptor.set_iv ( iv );
     let (c0_2, ctx2, tag2) = hybrid_encryptor.seal_detached_deterministic(
         &eph_bytes, Payload{msg: plaintext.as_bytes(), aad: jwe_protected_header_base64.as_bytes()}).unwrap();
@@ -263,7 +268,7 @@ fn test_rfc_7520_5_5_ecies () {
     assert!( tag2.as_ref() == BASE64_URL_SAFE_NO_PAD.decode(expected_tag).unwrap());
 
     // Decrypt using Ecies 
-    let mut hybrid_decryptor = EciesJweP256A128CbcHs256::from_bytes_decap(&recip_d.try_into().unwrap());
+    let mut hybrid_decryptor = EciesJweP256A128CbcHs256::try_from_slice_decap(&recip_d).unwrap();
     hybrid_decryptor.set_kdf(JwaKdf::new(b"A128CBC-HS256", b"", b""));
     hybrid_decryptor.set_iv(iv);
     let result_dec_payload = hybrid_decryptor.try_open_detached( &c0_2, Payload{msg: &ctx2, aad: jwe_protected_header_base64.as_bytes()}, &tag1 ).unwrap();
@@ -403,8 +408,8 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
     let rsa_public = RsaPublicKey::from(rsa_private.clone());
 
     let decap = RsaPkcs15Kem::<U256, U32>::from_private_key(rsa_private.clone());
-    let c0 = GenericArray::from_slice(rsa_encrypted_key.as_ref());
-    let cek_calc = decap.decapsulate(&c0).unwrap();
+    let c0 = Array::try_from(rsa_encrypted_key.as_slice()).unwrap();
+    let cek_calc = decap.decapsulate(&c0);
     assert! ( cek_calc.as_slice() == &cek);
 
     // Decrypt completely using RSA
@@ -416,7 +421,7 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
     // Encryptor doesn't result in the same C0 and encrypted secret, but can check that it decodes properly.
     let mut encryptor2 = RsaesPkcs15IesJweA128CbcHS256::from_key_encap(rsa_public);
     encryptor2.set_iv(iv.as_slice().try_into().unwrap());
-    let (encapped_key, ciphertext2, tag2) = encryptor2.seal_detached(&mut OsRng, plaintext).unwrap();
+    let (encapped_key, ciphertext2, tag2) = encryptor2.seal_detached(plaintext).unwrap();
     let plaintext22 = decryptor2.try_open_detached(&encapped_key, ciphertext2.as_slice(), &tag2).unwrap();
     assert_eq!(plaintext22.as_slice(), plaintext);
 
@@ -433,15 +438,17 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
     let ephem_d = &BASE64_URL_SAFE_NO_PAD.decode(ec_ephem_json["d"].as_str().unwrap()).unwrap();
     let ephem_x = &BASE64_URL_SAFE_NO_PAD.decode(ec_ephem_json["x"].as_str().unwrap()).unwrap();
     let ephem_y = &BASE64_URL_SAFE_NO_PAD.decode(ec_ephem_json["y"].as_str().unwrap()).unwrap();
-    let c0_ec = GenericArray::from_slice(&[/*[4u8].as_slice(),*/ ephem_x.as_slice(), ephem_y.as_slice()].concat()).clone();
+    let c0_ec = Array::try_from(&[/*[4u8].as_slice(),*/ ephem_x.as_slice(), ephem_y.as_slice()].concat()).unwrap();
 
     let ec_protected_header: Value = serde_json::from_str(&ec_protected_header.replace("\n","").replace(" ","")).unwrap();
     let alg = ec_protected_header["alg"].as_str().unwrap().as_bytes();
+    assert_eq!( alg, b"ECDH-ES+A256KW");
+    let alg = b"ECDH-ES+A256KW"; // something we did made set_kdf require a 'static reference..
 
     let mut ec_decapsulator = JweKemP384Sha256::try_from_slice_decap(&BASE64_URL_SAFE_NO_PAD.decode(ec_key_json["d"].as_str().unwrap()).unwrap()).unwrap();
     ec_decapsulator.set_kdf(JwaKdf::new(alg, b"", b""));
   
-    let kek_calc_ec = ec_decapsulator.decapsulate(&c0_ec).unwrap();
+    let kek_calc_ec = ec_decapsulator.decapsulate(&c0_ec);
 
     let kek = KwAes256::new(&kek_calc_ec);
     let encrypted_cek = BASE64_URL_SAFE_NO_PAD.decode(ec_encrypted_cek).unwrap();
@@ -458,7 +465,7 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
     let mut ec_encryptor = JweKemP384Sha256::try_from_slice_encap(&recip_xy).unwrap();
     ec_encryptor.set_kdf(JwaKdf::new(alg, b"", b""));
     
-    let (c0_ec_2, k_ec_2): (GenericArray<u8, _>, _) = ec_encryptor.encapsulate_deterministic(&ephem_d).unwrap();
+    let (c0_ec_2, k_ec_2): (Array<u8, _>, _) = ec_encryptor.encapsulate_deterministic(&ephem_d);
     assert! ( c0_ec_2 == c0_ec);
     assert! ( k_ec_2 == kek_calc_ec);
    
@@ -473,14 +480,14 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
 
 
     // Decrypt using ECIES structures
-    let mut decryptor = EciesP384A256KwJweA128CbcHs256::from_bytes_decap(&recip_d.try_into().unwrap());
+    let mut decryptor = EciesP384A256KwJweA128CbcHs256::try_from_slice_decap(&recip_d).unwrap();
     decryptor.set_kdf(JwaKdf::new(alg, b"", b""));
     
     let plaintext = decryptor.open_detached(&c0_ec, &encrypted_cek.as_slice().try_into().unwrap(), Payload{msg: &ciphertext, aad: symmetric_protected_header_base64.as_bytes()}, &tag.as_slice().try_into().unwrap(), &iv.as_slice().try_into().unwrap()).unwrap();
     assert_eq!( plaintext, plaintext_calc);
 
     // Encrypt using ECIES 
-    let mut encryptor = EciesP384A256KwJweA128CbcHs256::from_bytes_encap(&recip_xy);
+    let mut encryptor = EciesP384A256KwJweA128CbcHs256::try_from_bytes_encap(&recip_xy).unwrap();
     encryptor.set_kdf(JwaKdf::new(alg, b"", b""));
 
     let (ek, ecek, ciphertext4) = encryptor.seal_detached_encapsulated_key_deterministic(&ephem_d, cek.as_slice().try_into().unwrap(), Payload{msg: &plaintext, aad: symmetric_protected_header_base64.as_bytes()}, iv.as_slice().try_into().unwrap()).unwrap();
@@ -597,9 +604,9 @@ fn test_rfc_7516_a_1_rsaies () {
 
     // Start with decryption of the CEK
     let decap = RsaOaepKem::<U256,U32,Sha1,Sha1>::from_private_key(rsa_private.clone());
-    let c0 = GenericArray::from_slice(&encrypted_cek);
+    let c0 = Array::try_from(encrypted_cek.as_slice()).unwrap();
     
-    let cek_calc = decap.decapsulate(&c0).unwrap();
+    let cek_calc = decap.decapsulate(&c0);
 
     assert! ( cek_calc.as_slice() == cek);
 
@@ -621,7 +628,7 @@ fn test_rfc_7516_a_1_rsaies () {
 
     let mut encryptor = RsaesOaepJweA256Gcm::from_key_encap(rsa_private.to_public_key());
     encryptor.set_iv(iv.into());
-    let (c0_2, ct_2,tag) = encryptor.seal_detached(&mut OsRng, Payload{msg:&plaintext, aad:&aad}).unwrap();
+    let (c0_2, ct_2,tag) = encryptor.seal_detached(Payload{msg:&plaintext, aad:&aad}).unwrap();
     // Rsa OAEP uses random masking which can't be specified, best we can do is validate is that it decrypts
     let pt2 = decryptor.try_open_detached(&c0_2, Payload{msg: &ct_2, aad: &aad}, &tag).unwrap();
 
@@ -728,8 +735,8 @@ fn test_rfc_7516_a_2_rsaies () {
 
     /// Start with decryption of the cek
     let decap = RsaPkcs15Kem::<U256,U32>::from_private_key(rsa_private.clone());
-    let c0 = GenericArray::from_slice(&encrypted_cek);
-    let cek_calc = decap.decapsulate(&c0).unwrap();
+    let c0 = Array::try_from(encrypted_cek.as_slice()).unwrap();
+    let cek_calc = decap.decapsulate(&c0);
 
     assert! ( cek_calc.as_slice() == cek);
 
@@ -748,7 +755,7 @@ fn test_rfc_7516_a_2_rsaies () {
     
     let mut encryptor = RsaesPkcs15IesJweA128CbcHS256::from_key_encap(rsa_private.to_public_key());
     encryptor.set_iv(iv.into());
-    let (c0_2, ct_2,tag) = encryptor.seal_detached(&mut OsRng, Payload{msg:plaintext.as_slice(), aad:&aad}).unwrap();
+    let (c0_2, ct_2,tag) = encryptor.seal_detached(Payload{msg:plaintext.as_slice(), aad:&aad}).unwrap();
 
     let pt3 = decryptor.try_open_detached(&c0_2, Payload{msg: &ct_2, aad: &aad}, &tag).unwrap();
 

@@ -11,7 +11,7 @@ edition = "2024"
 
 
 all = ["rustcrypto-mlkem", "rustcrypto-aes", "rustcrypto-rsa", "rustcrypto-hmac", "rustcrypto-sha1", "rustcrypto-sha2", "rustcrypto-sha3", "rustcrypto-p256", "rustcrypto-blake2", "rustcrypto-cmac", "rustcrypto-salsa20",
-        "rustcrypto-p384", "rustcrypto-p521","rustcrypto-cbc","rustcrypto-p192","rustcrypto-p224", "rustcrypto-x25519", "rustcrypto-x448", "rustcrypto-des", "rustcrypto-sm2", "rustcrypto-sm3"]
+        "rustcrypto-p384", "rustcrypto-p521","rustcrypto-cbc","rustcrypto-p192","rustcrypto-p224", "rustcrypto-x25519", "rustcrypto-x448", "rustcrypto-des", "rustcrypto-sm2", "rustcrypto-sm3", "rustcrypto-secretbox"]
     
 rustcrypto-cbc = ["dep:cbc"]
 rustcrypto-cmac = [ "kdfs/rustcrypto-cmac"]
@@ -45,6 +45,7 @@ kems = { path = "../kems" }
 
 crypto-common = { version = "0.2.0"}
 aead = { version="0.6.0-rc.0", features = ["alloc"]}
+kem = { version = "0.3.0", features=["getrandom"]}
 #elliptic-curve = { version ="0.13.8", features=["jwk"]}
 digest = "0.11.0"
 cipher = { version = "0.5.0", features = ["block-padding", "alloc", "stream-wrapper"]  }
@@ -120,3 +121,5 @@ rand = { version = "0.10.0-rc.9"}
 #poly1305 = {version = "0.9.0-rc.5"}
 poly1305 = {version = "0.8.0"}
 
+[patch.crates-io]
+hybrid-array = { path = "../hybrid-array-mod" }

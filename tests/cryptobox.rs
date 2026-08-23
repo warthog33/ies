@@ -50,7 +50,7 @@ fn nacl_sample_2 ()
     let skRm2 = StaticSecret::from(skRm);
 
     let encryptor = EciesSodiumX255192::from_key_encap(pkRm2);
-    let encrypted_result = encryptor.seal_deterministic(&skRm.into(), plaintext.as_slice()).unwrap();
+    let encrypted_result = encryptor.seal_deterministic(&skRm, plaintext.as_slice()).unwrap();
 
     let decryptor = EciesSodiumX255192::from_key_decap(skRm2);
     let decrypted_result = decryptor.open(encrypted_result.as_ref()).unwrap();

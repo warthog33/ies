@@ -1,9 +1,10 @@
 use aead::{Aead, KeyInit};
 use cipher::Array;
-use ies::ies_types::EciesSm2;
+use ies::ies_types::{EcdhSm2X963KdfSm2, EciesSm2};
 
+use kems::{KemExtensions, EncapsulateDeterministic};
 //use ecies_kem::ecies::ecies_types::EciesSm2;
-use kems::eckem::{EcUncompressedEncoder, EcdhEncapsulator};
+use kems::eckem::{EcdhEncapsulator};
 //use ecies_kem::{Open, Seal};
 use elliptic_curve::consts::*;
 use elliptic_curve::point::AffineCoordinates;
@@ -12,10 +13,8 @@ use hex_literal::hex;
 //use kem::{Encapsulator,EncappedKey};
 //
 //use kems::Encapsulate;
-use kems::EncapsulateDeterministic2;
 use kems::FromKey;    
 //use elliptic_curve::generic_array::GenericArray;
-use kdfs::ansi_x9_63::X963Kdf;
 use ies::hash_encrypt::HashEncryption;
 
 use sm2::Sm2;
@@ -32,7 +31,7 @@ use ies::Ies;
 #[allow(non_snake_case, unused)]
 fn rfc_draft_shen_sm2_key_exchange_example_1 ()
 {
-    use kems::{Capsulator, eckem::{EcdhKem, SeedAsScalar}, kem_with_kdf::{CombinerNoKeys, KemWithKdf}};
+    use kems::{eckem::{EcdhKem}, kem_with_kdf::{CombinerNoKeys, KemWithKdf}};
 
     let dA = hex!( "81EB26E9 41BB5AF1 6DF11649 5F906952 72AE2CD6 3D6C4AE1 678418BE 48230029");
     let dA2 = sm2::SecretKey::from_bytes(&dA.into()).unwrap();
@@ -58,10 +57,9 @@ fn rfc_draft_shen_sm2_key_exchange_example_1 ()
     let r = hex!("D4DE1547 4DB74D06 491C440D 305E0124 00990F3E 390C7E87 153C12DB 2EA60BB3");
     //let mut pred_rng = PredictableRng::new(&r);
 
-    type EcdhSm2X963KdfSm2 = KemWithKdf<EcdhKem<sm2::Sm2, EcUncompressedEncoder<sm2::Sm2>, SeedAsScalar>, CombinerNoKeys, X963Kdf<sm3::Sm3>, U16>;
     //let encapsulator = EcdhEncapsulator::<_, EcCombinerNoPubKeys::<X963Kdf<sm3::Sm3>>, U16, EcUncompressedEncoder<sm2::Sm2>>::from_key(dA2.public_key());
     let encapsulator = EcdhSm2X963KdfSm2::from_public_key(dA2.public_key());
-    let (ek, sk) = encapsulator.encapsulate_deterministic (&r).unwrap();
+    let (ek, sk) = encapsulator.encapsulate_deterministic (&r);
 
     let x1 = hex!("64CED1BD BC99D590 049B434D 0FD73428 CF608A5D B8FE5CE0 7F150269 40BAE40E");
     let y1 = hex!("376629C7 AB21E7DB 26092249 9DDB118F 07CE8EAA E3E7720A FEF6A5CC 062070C0");
@@ -235,7 +233,7 @@ fn rfc_draft_shen_sm2_key_exchange_example_1 ()
 // GM/T 0003 Part 5
 // Annex C Example of message encryption and decryption
 fn text_annex_c () {
-    use kems::{eckem::{SeedAsScalar, EcRawEncoder}};
+    use kems::{eckem::{EcRawEncoder}};
 
     let dB = hex!("3945208F 7B2144B1 3F36E38A C6D39F95 88939369 2860B51A 42FB81EF 4DF7C5B8");
     let dB2 = sm2::SecretKey::from_bytes(&dB.into()).unwrap();
@@ -263,12 +261,12 @@ fn text_annex_c () {
     let y2 = hex!("AB743EBC FB22D64F 7B6AB791 F70658F2 5B48FA93 E54064FD BFBED3F0 BD847AC9");
 
     // Use kem first
-    let encapsulator = EcdhEncapsulator::<_, EcUncompressedEncoder<Sm2>, EcRawEncoder<Sm2>, SeedAsScalar>::from_key(dB2.public_key());
+    let encapsulator = EcdhEncapsulator::<_, EcRawEncoder<Sm2>>::from_key(dB2.public_key());
     
     //let (ek, sk) = encapsulator.try_encap (&mut pred_rng, &dB2.public_key()).unwrap();
     //let (ek, sk) = encapsulator.encapsulate (&mut pred_rng).unwrap();
-    let (ek, sk) = encapsulator.encapsulate_deterministic (&k).unwrap();
-    assert! ( &ek.as_ref() == &c1 );
+    let (ek, sk) = encapsulator.encapsulate_deterministic (&k);
+    assert_eq! ( ek.as_slice(), &c1[1..]);
     assert! ( &sk[0..32] == &x2);
     assert! ( &sk[32..] == &y2);
 
@@ -282,9 +280,9 @@ fn text_annex_c () {
 
     // Use hybrid encryptor structs
     let sm3ecies = EciesSm2::from_key_encap(dB2.public_key());
-    let ciphertext3 = sm3ecies.seal_deterministic ( &k.into(), message.as_ref()).unwrap();
+    let ciphertext3 = sm3ecies.seal_deterministic ( &k, message.as_ref()).unwrap();
 
-    assert! ( &ciphertext3 == &ciphertext);
+    assert! ( &ciphertext3 == &ciphertext[1..]);
 
     // Use hybrid decryptor structs
     let sm3ecies2 = EciesSm2::from_key_decap(dB2);

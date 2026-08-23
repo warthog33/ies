@@ -2,17 +2,18 @@
 
 use aes::Aes128;
 use aead::Generate;
-use aes_gcm::{AesGcm, KeyInit};
+use aes_gcm::{KeyInit};
 use aes_gcm::aead::{Aead,Payload};
 use ctr::Ctr64BE;
 use ctr::cipher::{KeyIvInit,StreamCipher};
+use elliptic_curve::sec1::FromSec1Point;
 use elliptic_curve::{PrimeField,Scalar};
 use elliptic_curve::consts::*;
 use elliptic_curve::ecdh::diffie_hellman;
 use elliptic_curve::point::{AffineCoordinates,DecompactPoint};
 use elliptic_curve::ff::FromUniformBytes;
-use ies::{Ies, SimpleIes};
-use ies::ies_types::{EciesSm2, EciesStandardVariableIVX963SHA512AESGCM, X963Kdf};
+use ies::{Ies};
+use ies::ies_types::{EcdhKemP256EmvCmac128, EciesCompactX963SHA256AESGCM, EciesSm2, EciesStandardVariableIVX963SHA512AESGCM, X963Kdf};
 use ies::ies_types::{RsaOAEPSHA224AESGCM, RsaOAEPSHA256AESGCM,RsaOAEPSHA384AESGCM,RsaOAEPSHA512AESGCM,RsaesPkcs15IesJweA128CbcHS256};
 use ies::ies_types::{RsaOAEPSHA1AESGCM, EciesStandardVariableIVX963SHA384AESGCM, EciesStandardX963SHA384AESGCM, EciesStandardX963SHA512AESGCM};
 use ies::ies_types::{EciesStandardVariableIVX963SHA256AESGCM, EciesStandardX963SHA256AESGCM,EciesStandardVariableIVX963SHA224AESGCM, EciesStandardX963SHA1AESGCM}; 
@@ -21,12 +22,13 @@ use kdfs::Kdf;
 use kdfs::hybrid_array::Array;
 use kdfs::emv::{EmvCmacAes128,EmvSessionKeyType,EmvCommonSessionKdf};
 
+use kem::{Kem, Decapsulate, Decapsulator, Encapsulate, KeyExport};
 use kems::rsakem::{RsaDecapsulator, RsaRaw};
-use kems::{OsRng, RngCore, Capsulator,FromKey,EncapsulateDeterministic2,Encapsulate, Decapsulate, GetRecipientPublicKeyBytes};
+use kems::{OsRng, RngCore, KemExtensions,FromKey,EncapsulateDeterministic};
 use kems::iso18033_2::{EciesKemCompressedKdf1, EciesKemUncompressedKdf1, RsaKemKdf1, RsaKemKdf2};
-use kems::kem_with_kdf::{CombinerNoKeys,CombinerEphemOnly, KemWithKdf};
+use kems::kem_with_kdf::{CombinerCiphertext, KemWithKdf};
 use kems::eckem::*;
-use kems::generic_array::GenericArray;
+
 use rsa::pkcs1::{DecodeRsaPrivateKey,EncodeRsaPublicKey};
 use rsa::pkcs8::DecodePrivateKey;
 use rsa::RsaPrivateKey;
@@ -77,15 +79,17 @@ fn test_iso18033_c_2_2() {
         87cf4150bdf23b015d7b525b797cf6d533e9f6ad49a4c6de5e7089724c9cadf0adf1\
         3ee51b41be6713653fc1cb2c95a1d1b771cc7429189861d7a829f3");
     
-    let encapsulator = EciesKemUncompressedKdf1::<NistP192,Sha1,U128>::from_bytes_encap(&Array::try_from(&[[4u8].as_slice(), &h_x, &h_y].concat()).unwrap());
-    let (c0_calc, k_calc ) = encapsulator.encapsulate_deterministic(&r).unwrap();
-    assert! ( &c0_calc == GenericArray::from_slice(&c0));
-    assert! ( k_calc == k );
+    let encoded_point = p192::Sec1Point::from_affine_coordinates(&h_x.into(), &h_y.into(), false);
+    let encap_key = elliptic_curve::PublicKey::<NistP192>::from_sec1_point(&encoded_point).unwrap();
+    let encapsulator = EciesKemUncompressedKdf1::<NistP192,Sha1,U128>::from_public_key(encap_key);
+    let (c0_calc, k_calc ) = encapsulator.encapsulate_deterministic(&r);
+    assert_eq! ( c0_calc, c0);
+    assert_eq! ( k_calc, k );
     
     // Decapsulate
-    let decapsulator = EciesKemUncompressedKdf1::<NistP192,Sha1,U128>::from_bytes_decap(&x.into());
+    let decapsulator = EciesKemUncompressedKdf1::<NistP192,Sha1,U128>::try_from_slice_decap(&x).unwrap();
     
-    let k_calc2 = decapsulator.decapsulate(&c0_calc).unwrap();
+    let k_calc2 = decapsulator.decapsulate(&c0_calc);
     assert! ( k_calc2 == k);
 
 }
@@ -124,15 +128,15 @@ fn test_iso_18033_2_c_2_3 () {
         237b0aa186d0cdbab47a00fb4065d62cfc18f8a8d12c78ecbee3fd");
 
     // Encapsulate
-    let encapsulator = EciesKemCompressedKdf1::<NistP192,Sha1,U128>::from_bytes_encap(&(&[[2u8].as_slice(), &h_x].concat().try_into().unwrap())); //new(kdf);
+    let encapsulator = EciesKemCompressedKdf1::<NistP192,Sha1,U128>::try_from_bytes_encap(&(&[[2u8].as_slice(), &h_x].concat().try_into().unwrap())).unwrap(); //new(kdf);
     
-    let (c0_calc, k_calc) = encapsulator.encapsulate_deterministic(&r).unwrap();
+    let (c0_calc, k_calc) = encapsulator.encapsulate_deterministic(&r);
     assert! ( c0_calc.as_slice() == &c0);
     assert! ( k_calc == k );
 
     // Decapsulate
-    let decapsulator = EciesKemCompressedKdf1::<NistP192,Sha1,U128>::from_bytes_decap(&x.into());
-    let k_calc2 = decapsulator.decapsulate(&c0_calc).unwrap();
+    let decapsulator = EciesKemCompressedKdf1::<NistP192,Sha1,U128>::try_from_slice_decap(&x).unwrap();
+    let k_calc2 = decapsulator.decapsulate(&c0_calc);
     assert! ( k_calc2 == k);
 
 }
@@ -325,7 +329,7 @@ fn test_iso_18033_2_c_6_1 () {
 
     
     let encapsulator2 = RsaKemKdf1::<U64, U128, Sha1>::from_public_key(pubkey);
-    let (c0_calc2, k_calc2 ) = encapsulator2.encapsulate_deterministic(&r).unwrap();
+    let (c0_calc2, k_calc2 ) = encapsulator2.encapsulate_deterministic(&r);
     assert! ( k_calc2 == k );
     assert! ( c0_calc2.as_slice() == &c0 );
     
@@ -333,7 +337,7 @@ fn test_iso_18033_2_c_6_1 () {
     let priv_key = rsa::RsaPrivateKey::from_components(n_2, e_2, d_2, [].to_vec()).unwrap();
     let decapsulator = RsaKemKdf1::<U64, U128, Sha1>::from_private_key(priv_key);
 
-    let k_calc2 = decapsulator.decapsulate(&c0_calc2).unwrap();
+    let k_calc2 = decapsulator.decapsulate(&c0_calc2);
     assert_eq! ( k_calc2.as_slice(), k );
 }
 #[test]
@@ -343,11 +347,11 @@ fn test_rsa_kem () {
     let mut rng = rand::rng();
     let key = rsa::RsaPrivateKey::new(&mut rng, 1024).expect("failed to generate a key");
     
-    let encapsulator = <::kems::iso18033_2::RsaKemKdf1::<U128, U16, Sha256> as Capsulator>::Encapsulator::from_key(key.to_public_key());
-    let (c0_send, k_send )= encapsulator.encapsulate(&mut OsRng ).unwrap();
+    let encapsulator = <::kems::iso18033_2::RsaKemKdf1::<U128, U16, Sha256> as Kem>::EncapsulationKey::from_key(key.to_public_key());
+    let (c0_send, k_send )= encapsulator.encapsulate();
 
     let decapsulator = ::kems::iso18033_2::RsaKemKdf1::<U128, U16, Sha256>::from_private_key(key);
-    let k_recv = decapsulator.decapsulate(&c0_send).unwrap();
+    let k_recv = decapsulator.decapsulate(&c0_send);
 
     assert! ( k_send == k_recv);
 }
@@ -392,14 +396,14 @@ fn test_iso_18033_2_c_6_2 () {
     let pubkey = rsa::RsaPublicKey::new (n_2.clone(),e_2.clone()).unwrap();
     let encapsulator = RsaKemKdf2::<U64, U128, Sha1>::from_public_key(pubkey);
     
-    let (c0_calc, k_calc) = encapsulator.encapsulate_deterministic(&r).unwrap();
+    let (c0_calc, k_calc) = encapsulator.encapsulate_deterministic(&r);
     assert! ( k_calc.as_slice() == k );
     assert! ( c0_calc.as_slice() == &c0 );
 
     let d_2 = rsa::BoxedUint::from_str_radix_vartime(d, 10).unwrap();
     let priv_key = rsa::RsaPrivateKey::from_components(n_2, e_2, d_2, [].to_vec()).unwrap();
     let decapsulator = RsaKemKdf2::<U64, U128, Sha1>::from_private_key(priv_key);
-    let k_calc2 = decapsulator.decapsulate(&c0_calc).unwrap();
+    let k_calc2 = decapsulator.decapsulate(&c0_calc);
     assert_eq! ( k_calc2.as_slice(), k );
 
 }
@@ -433,14 +437,14 @@ fn test_emvco_blinded_diffie_helman() {
     let blinded_secret_key: p256::Scalar = r * card_static_secret_scalar2;
     let blinded_secret_as_bytes = blinded_secret_key.as_ref().to_bytes();
 
-    let encapsulator = KemWithKdf::<EcdhKemUncompressed::<_, SeedAsScalar>, CombinerEphemOnly, EmvCmacAes128, U16>::from_public_key(terminal_public_key); //new(kdf);
-    let (c0_calc, k_send ) = encapsulator.encapsulate_deterministic(&blinded_secret_as_bytes).unwrap();
+    let encapsulator = KemWithKdf::<EcdhKemUncompressed::<_>, CombinerCiphertext, EmvCmacAes128, U16>::from_public_key(terminal_public_key); //new(kdf);
+    let (c0_calc, k_send ) = encapsulator.encapsulate_deterministic(&blinded_secret_as_bytes);
 
-    let decapsulator = KemWithKdf::<EcdhKemUncompressed::<_, SeedAsScalar>, CombinerEphemOnly, EmvCmacAes128, U16>::from_private_key(terminal_secret_key);
-    let k_recv = decapsulator.decapsulate(&c0_calc).unwrap();
+    let decapsulator = KemWithKdf::<EcdhKemUncompressed::<_>, CombinerCiphertext, EmvCmacAes128, U16>::from_private_key(terminal_secret_key);
+    let k_recv = decapsulator.decapsulate(&c0_calc);
     assert! ( k_recv == k_send );
 
-    let session_key_confidentiality = EmvCommonSessionKdf::<Aes128>::derive_session_key(&k_recv, EmvSessionKeyType::SessionKeyConfidentiality).unwrap();
+    let session_key_confidentiality = EmvCommonSessionKdf::<Aes128>::derive_session_key(&k_recv, EmvSessionKeyType::SessionKeyConfidentiality);
 
     // Validate blinding factor as per EMV spec
     let mut r_as_bytes = r.to_bytes().as_slice().to_vec();
@@ -483,18 +487,16 @@ fn test_emvco_book_e_we_6_1_p256 ()
     let r_card = Scalar::<NistP256>::from_repr(r.into()).unwrap();
     let dC_r = (dC_card * r_card).to_bytes();
     
-    type EcdhKemP256EmvCmac128 = KemWithKdf<EcdhKem<NistP256, EcXonlyEncoder<NistP256>, SeedAsScalar, EcXonlyEncoder<NistP256>>, CombinerNoKeys, EmvCmacAes128, U16>;
-    
-    let encapsulator = EcdhKemP256EmvCmac128::from_bytes_encap(&QK.into());
+    let encapsulator = EcdhKemP256EmvCmac128::try_from_bytes_encap(&QK.into()).unwrap();
 
-    let (c0_calc, k_send ) = encapsulator.encapsulate_deterministic(&dC_r).unwrap();
-    assert_eq! ( c0_calc, PC_x.into());
+    let (c0_calc, k_send ) = encapsulator.encapsulate_deterministic(&dC_r);
+    assert_eq! ( c0_calc, PC_x);
     assert_eq! ( k_send.0, KD);
 
     // Terminal side, decapsulates key 
-    let decapsulator = EcdhKemP256EmvCmac128::from_bytes_decap(&dK.into());
+    let decapsulator = EcdhKemP256EmvCmac128::try_from_slice_decap(&dK).unwrap();
     
-    let k_recv = decapsulator.decapsulate(&c0_calc).unwrap();
+    let k_recv = decapsulator.decapsulate(&c0_calc);
     assert! ( k_recv == KD );
 
     // Derive sub keys
@@ -505,11 +507,11 @@ fn test_emvco_book_e_we_6_1_p256 ()
     let C3 = hex!("03010054334A325957773DA5A5A50180");
     let SKR = /*AES (KD) [C3]*/ hex!("55042AA8CF1F193EC435A449493C177D");
 
-    let SKC2 = EmvCommonSessionKdf::<Aes128>::derive_secret_other::<U16>(&k_recv, &C1).unwrap();
-    assert! ( SKC2 == SKC);
-    let SKI2 = EmvCommonSessionKdf::<Aes128>::derive_secret_other::<U16>(&k_recv, &C2).unwrap();
+    let SKC2: Array<u8, U16> = EmvCommonSessionKdf::<Aes128>::derive_secret_other(&k_recv, &C1);
+    assert_eq! ( &SKC2, &SKC);
+    let SKI2: Array<u8, U16> = EmvCommonSessionKdf::<Aes128>::derive_secret_other(&k_recv, &C2);
     assert! ( SKI2 == SKI);
-    let SKR2 = EmvCommonSessionKdf::<Aes128>::derive_secret_other::<U16>(&k_recv, &C3).unwrap();
+    let SKR2: Array<u8, U16> = EmvCommonSessionKdf::<Aes128>::derive_secret_other(&k_recv, &C3);
     assert! ( SKR2 == SKR);
     
 
@@ -574,11 +576,11 @@ fn apple_sample_1 ()
     // let pkrm3 = skrm2.public_key().to_sec1_bytes();
     // assert!( &pkrm3.to_vec() == &pkrm);
     
-    let decapsulator = KemWithKdf::<EcdhKemUncompressed::<NistP256,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha256>, U32>::from_bytes_decap(&skrm.into());
-    assert_eq!(decapsulator.get_recipient_public_key_bytes(), pkrm.as_slice());
+    let decapsulator = KemWithKdf::<EcdhKemUncompressed::<NistP256>, CombinerCiphertext, X963Kdf<Sha256>, U32>::try_from_slice_decap(&skrm).unwrap();
+    assert_eq!(decapsulator.encapsulation_key().to_bytes(), pkrm);
 
-    let c0_ga = GenericArray::<u8, U65>::from_slice(c0);
-    let ss_key_recv = decapsulator.decapsulate(&c0_ga).unwrap();
+    //let c0_ga = Array::<u8, U65>::from_slice(c0).try_into().unwrap();
+    let ss_key_recv = decapsulator.decapsulate(&c0.try_into().unwrap());
 
     let (aes_key, aes_nonce) = ss_key_recv.split_ref::<U16>();
 
@@ -586,30 +588,29 @@ fn apple_sample_1 ()
     let result = decryptor.decrypt ( &aes_nonce, ct ).unwrap();
     assert_eq! ( &result, &b"Hello World!");
 
-
     //let decryptor = EciesStandardVariableIVX963SHA256AESGCM::from_key_decap(skrm2.clone());
-    let decryptor = EciesStandardVariableIVX963SHA256AESGCM::<NistP256>::from_bytes_decap(&skrm.into());
-    let result = decryptor.open_semi_detached(&c0_ga, ct);
+    let decryptor = EciesStandardVariableIVX963SHA256AESGCM::<NistP256>::try_from_slice_decap(&skrm).unwrap();
+    let result = decryptor.open_semi_detached(&c0.try_into().unwrap(), ct);
     assert! ( &result.unwrap() == &b"Hello World!");
 
     let result2 = decryptor.open(output.as_ref());
     assert! ( &result2.unwrap() == &b"Hello World!");
 
     //let dd3 = EciesStandardX963SHA256AESGCM::from_key_decap(skrm2.clone());
-    let dd3 = EciesStandardX963SHA256AESGCM::<NistP256>::from_bytes_decap(&skrm.into());
+    let dd3 = EciesStandardX963SHA256AESGCM::<NistP256>::try_from_slice_decap(&skrm).unwrap();
     let (c01, ct1) = output1.split_at(65);
 
-    let result = dd3.open_detached_encapsulated_key(&GenericArray::from_slice(c01), ct1);
+    let result = dd3.open_detached_encapsulated_key(&c01.try_into().unwrap(), ct1);
     assert! ( &result.unwrap() == &b"Hello World!");
 
     let result = dd3.open(output1.as_ref());
     assert! ( &result.unwrap() == &b"Hello World!");
 
-    let dd4 = EciesStandardX963SHA1AESGCM::<NistP256>::from_bytes_decap(&skrm.into());
+    let dd4 = EciesStandardX963SHA1AESGCM::<NistP256>::try_from_slice_decap(&skrm).unwrap();
     let result = dd4.open(output2.as_ref());
     assert! ( &result.unwrap() == &b"Hello World!");
     
-    let dd5 = EciesStandardVariableIVX963SHA224AESGCM::<NistP256>::from_bytes_decap(&skrm.into());
+    let dd5 = EciesStandardVariableIVX963SHA224AESGCM::<NistP256>::try_from_slice_decap(&skrm).unwrap();
     let result = dd5.open(output3.as_ref());
     assert! ( &result.unwrap() == &b"Hello World!");
 
@@ -649,23 +650,22 @@ fn apple_sample_2 ()
     let z = diffie_hellman ( dec_priv_key2.to_nonzero_scalar(), eph_priv_key2.public_key().as_affine());
     assert_eq!(z.raw_secret_bytes(), &Z);
     
-    let decapsulator = KemWithKdf::<EcdhKemUncompressed::<NistP256,SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha256>, U16>::from_bytes_decap(&dec_priv_key.into());
-    let key = decapsulator.decapsulate(&GenericArray::<u8, U65>::from_slice(&cipher[0..65])).unwrap();
+    let decapsulator = KemWithKdf::<EcdhKemUncompressed::<NistP256>, CombinerCiphertext, X963Kdf<Sha256>, U16>::try_from_slice_decap(&dec_priv_key).unwrap();
+    let key = decapsulator.decapsulate(&cipher[0..65].try_into().unwrap());
 
     let aes_cipher = aes_gcm::AesGcm::<Aes128, U16, U16>::new(&key);
     let encrypted = aes_cipher.encrypt ( &Array::default()/*empty nonce*/, message.as_ref() ).unwrap();
     assert_eq! ( encrypted.as_slice(), &cipher[65..]);
 
-    let encapsulator = EciesStandardX963SHA256AESGCM::<NistP256>::try_from_slice_encap(&decapsulator.get_recipient_public_key_bytes()).unwrap();
-    let calc_cipher = encapsulator.seal_deterministic(&eph_priv_key.into(), message.as_ref()).unwrap();
+    let encapsulator = EciesStandardX963SHA256AESGCM::<NistP256>::try_from_slice_encap(&decapsulator.encapsulation_key().to_bytes()).unwrap();
+    let calc_cipher = encapsulator.seal_deterministic(&eph_priv_key, message.as_ref()).unwrap();
     assert! ( &calc_cipher == &cipher);
 
-    let decapsulator = EciesStandardX963SHA256AESGCM::<NistP256>::from_bytes_decap(&dec_priv_key.into());
+    let decapsulator = EciesStandardX963SHA256AESGCM::<NistP256>::try_from_slice_decap(&dec_priv_key).unwrap();
     let calc_plaintext = decapsulator.open(cipher.as_ref()).unwrap();
     assert! ( &calc_plaintext == &message);
 
-    pub type EciesCompactX963SHA256AESGCM<C> = SimpleIes<KemWithKdf<EcdhKemCompact<C, SeedAsScalar>, CombinerEphemOnly, X963Kdf<Sha256>, U16>, AesGcm<Aes128, U16, U16>>;
-    let decapsulator = EciesCompactX963SHA256AESGCM::<NistP256>::from_bytes_decap(&dec_priv_key.into());
+    let decapsulator = EciesCompactX963SHA256AESGCM::<NistP256>::try_from_slice_decap(&dec_priv_key).unwrap();
     let plaintext3 = decapsulator.open(compact_cipher.as_ref()).unwrap();
     assert! ( &plaintext3 == &message);
 
@@ -690,12 +690,12 @@ fn apple_sample_3_p521_ivx ()
     let plaintext = b"Hello World!";
     let ciphertext = hex!("04018cf6 02ad5f32 b8821e59 0ac59ed2 5e271c0c 86377973 35daef74 bc7c85f9 a49f91e5 aad4aae4 ed682cc0 e2c72cbe a3052dba 3782a085 47696fb5 7278bcd2 53b5ea01 e3c21bb8 01bd29d6 8ee37fb6 e8fd8444 6068a1c0 bbbda3d1 d6a54335 63316f6e 48933234 b1470fba 4faba708 53b6b082 4ef16bd8 d9a12330 5227edf7 13465776 f42e725a 1ba72ca8 a7a6ff8a d130e4fc 9fc300ce 9f9ca0a4 45013da4 1b");
 
-    let decapsulator = EciesStandardVariableIVX963SHA512AESGCM::<NistP521>::from_bytes_decap(&skRm.into());
+    let decapsulator = EciesStandardVariableIVX963SHA512AESGCM::<NistP521>::try_from_slice_decap(&skRm).unwrap();
     let calc_plaintext = decapsulator.open(ciphertext.as_ref()).unwrap();
     assert! ( calc_plaintext == plaintext);
 
-    let encapsulator = EciesStandardVariableIVX963SHA512AESGCM::<NistP521>::from_bytes_encap(&pkRm.into());
-    let calc_ciphertext2 = encapsulator.seal_deterministic(&skEm.into(), plaintext.as_ref()).unwrap();
+    let encapsulator = EciesStandardVariableIVX963SHA512AESGCM::<NistP521>::try_from_bytes_encap(&pkRm.into()).unwrap();
+    let calc_ciphertext2 = encapsulator.seal_deterministic(&skEm, plaintext.as_ref()).unwrap();
     //assert_eq!(calc_ciphertext2, &ciphertext); // doesn't seem to use skEm as the raw randomness directly converted to a key
 
     let calc_plaintext2 = decapsulator.open(calc_ciphertext2.as_ref()).unwrap();
@@ -735,7 +735,7 @@ fn apple_sample_3_p521_sha512 ()
 
     //let dec_priv_key2 = elliptic_curve::SecretKey::<NistP521>::from_slice(&skRm).unwrap();
     //let decapsulator = EciesStandardX963SHA512AESGCM::from_key_decap(dec_priv_key2.clone());
-    let decapsulator = EciesStandardX963SHA512AESGCM::<NistP521>::from_bytes_decap(&skRm.into());
+    let decapsulator = EciesStandardX963SHA512AESGCM::<NistP521>::try_from_slice_decap(&skRm).unwrap();
     let calc_plaintext = decapsulator.open(ciphertext.as_ref()).unwrap();
     assert! ( calc_plaintext == plaintext);
 
@@ -744,20 +744,20 @@ fn apple_sample_3_p521_sha512 ()
     let pkRm3 = elliptic_curve::PublicKey::<NistP521>::from_sec1_bytes(pkRm.as_ref()).unwrap();
     let encapsulator = EciesStandardX963SHA512AESGCM::from_key_encap(pkRm3);
     //let calc_ciphertext2 = encapsulator.seal(&mut pred_rng, plaintext.as_ref()).unwrap();
-    let calc_ciphertext2 = encapsulator.seal_deterministic(&skEm.into(), plaintext.as_ref()).unwrap();
+    let calc_ciphertext2 = encapsulator.seal_deterministic(&skEm, plaintext.as_ref()).unwrap();
 
     let calc_plaintext2 = decapsulator.open(calc_ciphertext2.as_ref()).unwrap();
     assert! ( calc_plaintext2 == plaintext);
 
-    let decapsulator2 = EciesStandardVariableIVX963SHA384AESGCM::<NistP521>::from_bytes_decap(&skRm.into());
+    let decapsulator2 = EciesStandardVariableIVX963SHA384AESGCM::<NistP521>::try_from_slice_decap(&skRm).unwrap();
     let calc_plaintext3 = decapsulator2.open(ciphertext2.as_ref()).unwrap();
     assert! ( calc_plaintext3 == plaintext );
 
-    let decapsulator4 = EciesStandardX963SHA384AESGCM::<NistP521>::from_bytes_decap(&skRm.into());
+    let decapsulator4 = EciesStandardX963SHA384AESGCM::<NistP521>::try_from_slice_decap(&skRm).unwrap();
     let calc_plaintext4 = decapsulator4.open(ciphertext3.as_ref()).unwrap();
     assert! ( calc_plaintext4 == plaintext );
 
-    let decapsulator4 = EciesStandardX963SHA384AESGCM::<NistP521>::from_bytes_decap(&skRm.into());
+    let decapsulator4 = EciesStandardX963SHA384AESGCM::<NistP521>::try_from_slice_decap(&skRm).unwrap();
     let calc_plaintext4 = decapsulator4.open(ciphertext4.as_ref()).unwrap();
     assert! ( calc_plaintext4 == plaintext );
 
@@ -779,7 +779,7 @@ fn apple_sample_3_rsa_2048_sha1() {
     
 
     let encryptor = RsaOAEPSHA1AESGCM::<U256>::from_key_encap(rsa_priv.to_public_key());
-    let ciphertext2 = encryptor.seal ( &mut OsRng, Payload { msg: plaintext.as_ref(), aad: rsa_pub.as_bytes()}).unwrap();
+    let ciphertext2 = encryptor.seal ( Payload { msg: plaintext.as_ref(), aad: rsa_pub.as_bytes()}).unwrap();
     
     let plaintext2 = decryptor.open ( Payload{msg: ciphertext2.as_ref(), aad: rsa_pub.as_bytes()}).unwrap();
     assert! ( &plaintext2 == &plaintext);
@@ -805,7 +805,7 @@ fn apple_sample_3_rsa_2048_sha512() {
     assert_eq! ( &result, plaintext1);
 
     let encryptor = RsaOAEPSHA512AESGCM::<U256>::from_key_encap(rsa_priv.to_public_key());
-    let ciphertext2 = encryptor.seal ( &mut OsRng, Payload { msg: plaintext1, aad: rsa_pub.as_bytes()}).unwrap();
+    let ciphertext2 = encryptor.seal ( Payload { msg: plaintext1, aad: rsa_pub.as_bytes()}).unwrap();
 
     let plaintext2 = decryptor.open ( Payload{msg: ciphertext2.as_ref(), aad: rsa_pub.as_bytes()}).unwrap();
     assert_eq!(plaintext2, plaintext1);
@@ -829,7 +829,7 @@ fn apple_sample_3_rsa_2048_sha224() {
     assert! ( &plaintext2.unwrap() == plaintext_ba);
 
     let encryptor = RsaOAEPSHA224AESGCM::<U256>::from_key_encap(rsa_priv.to_public_key());
-    let ciphertext2 = encryptor.seal ( &mut OsRng, Payload { msg: plaintext_ba, aad: rsa_pub.as_bytes()}).unwrap();
+    let ciphertext2 = encryptor.seal ( Payload { msg: plaintext_ba, aad: rsa_pub.as_bytes()}).unwrap();
 
     let plaintext3 = decryptor.open ( Payload{msg: ciphertext2.as_ref(), aad: rsa_pub.as_bytes()}).unwrap();
     assert_eq!(plaintext3, plaintext_ba);
@@ -852,7 +852,7 @@ fn apple_sample_4_rsa_2048_sha256() {
     assert! ( &result.unwrap() == plaintext_ba);
 
     let encryptor = RsaOAEPSHA256AESGCM::<U256>::from_key_encap(rsa_priv.to_public_key());
-    let ciphertext2 = encryptor.seal ( &mut OsRng, Payload { msg: plaintext_ba, aad: rsa_pub.as_bytes()}).unwrap();
+    let ciphertext2 = encryptor.seal ( Payload { msg: plaintext_ba, aad: rsa_pub.as_bytes()}).unwrap();
 
     let plaintext2 = decryptor.open ( Payload{msg: ciphertext2.as_ref(), aad: rsa_pub.as_bytes()}).unwrap();
     assert_eq!(plaintext2, plaintext_ba);
@@ -873,7 +873,7 @@ fn apple_sample_5_rsa_2048_sha384() {
     assert! ( &plaintext2.unwrap() == plaintext_ba);
 
     let encryptor = RsaOAEPSHA384AESGCM::<U256>::from_key_encap(rsa_priv.to_public_key());
-    let ciphertext2 = encryptor.seal ( &mut OsRng, Payload { msg: plaintext_ba, aad: rsa_pub.as_bytes()}).unwrap();
+    let ciphertext2 = encryptor.seal ( Payload { msg: plaintext_ba, aad: rsa_pub.as_bytes()}).unwrap();
 
     let plaintext3 = decryptor.open ( Payload{msg: ciphertext2.as_ref(), aad: rsa_pub.as_bytes()}).unwrap();
     assert_eq! ( plaintext3, plaintext_ba);
@@ -926,7 +926,7 @@ fn openssl_encap_rsa () {
     let rsa_priv2 = rsa::RsaPrivateKey::from_pkcs8_pem(rsa_priv).unwrap();
 
     let decapsulator = RsaDecapsulator::<U128, U128, RsaRaw>::from_key(rsa_priv2);
-    let shared_secret = decapsulator.decapsulate(GenericArray::from_slice(&encapped_key)).unwrap();
+    let shared_secret = decapsulator.decapsulate(&encapped_key.as_slice().try_into().unwrap());
     assert_eq!( shared_secret, key);
 }
 
@@ -935,18 +935,18 @@ fn openssl_encap_rsa () {
 #[test]
 fn test_ec_ml_kem ()
 {
-    let (encapsulator, decapsulator) = EcdhKem::<NistP256, EcCompressedEncoder<NistP256>>::generate_from_rng(&mut OsRng);
-    let (ek, ss) = encapsulator.encapsulate ( &mut OsRng).unwrap();
-    let ss2 = decapsulator.decapsulate(&ek).unwrap();
+    let (decapsulator, encapsulator) = EcdhKem::<NistP256, EcCompressedEncoder<NistP256>>::generate_keypair();
+    let (ek, ss) = encapsulator.encapsulate();
+    let ss2 = decapsulator.decapsulate(&ek);
     assert_eq! ( ss, ss2);
 }
 
 #[test]
 fn test_apple_full ()
 {
-    let (encryptor, decryptor) = EciesStandardX963SHA256AESGCM::<NistP256>::generate(&mut OsRng);
+    let (encryptor, decryptor) = EciesStandardX963SHA256AESGCM::<NistP256>::generate();
 
-    let ciphertext = encryptor.seal ( &mut OsRng, b"Hello World".as_slice()).unwrap();
+    let ciphertext = encryptor.seal ( b"Hello World".as_slice()).unwrap();
     let plaintext = decryptor.open ( ciphertext.as_slice()).unwrap();
     assert_eq! ( plaintext, b"Hello World");
 }
@@ -954,9 +954,9 @@ fn test_apple_full ()
 #[test]
 fn test_apple_2 ()
 {
-    let (encryptor, decryptor) = EciesStandardVariableIVX963SHA256AESGCM::<NistP384>::generate(&mut OsRng);
+    let (encryptor, decryptor) = EciesStandardVariableIVX963SHA256AESGCM::<NistP384>::generate();
 
-    let ciphertext = encryptor.seal ( &mut OsRng, b"Hello World".as_slice()).unwrap();
+    let ciphertext = encryptor.seal ( b"Hello World".as_slice()).unwrap();
     let plaintext = decryptor.open ( ciphertext.as_slice()).unwrap();
     assert_eq! ( plaintext, b"Hello World");
 }
@@ -965,8 +965,8 @@ fn test_apple_2 ()
 #[test]
 fn test_apple_3 ()
 {
-    let (encryptor, decryptor) = EciesStandardX963SHA512AESGCM::<NistP521>::generate(&mut OsRng);
-    let ciphertext = encryptor.seal ( &mut OsRng, b"Hello World".as_slice()).unwrap();
+    let (encryptor, decryptor) = EciesStandardX963SHA512AESGCM::<NistP521>::generate();
+    let ciphertext = encryptor.seal ( b"Hello World".as_slice()).unwrap();
     let plaintext = decryptor.open ( ciphertext.as_slice()).unwrap();
     assert_eq! ( plaintext, b"Hello World");
 }
@@ -975,8 +975,8 @@ fn test_apple_3 ()
 #[test]
 fn test_apple_4 ()
 {
-    let (encryptor, decryptor) = RsaOAEPSHA256AESGCM::<U256>::generate(&mut OsRng);
-    let ciphertext = encryptor.seal ( &mut OsRng, b"Hello World".as_slice()).unwrap();
+    let (encryptor, decryptor) = RsaOAEPSHA256AESGCM::<U256>::generate();
+    let ciphertext = encryptor.seal ( b"Hello World".as_slice()).unwrap();
     let plaintext = decryptor.open ( ciphertext.as_slice()).unwrap();
     assert_eq! ( plaintext, b"Hello World");
 }
@@ -985,8 +985,8 @@ fn test_apple_4 ()
 #[test]
 fn test_sm2_5 ()
 {
-    let (encryptor, decryptor) = EciesSm2::generate(&mut OsRng);
-    let ciphertext = encryptor.seal ( &mut OsRng, b"Hello World".as_slice()).unwrap();
+    let (encryptor, decryptor) = EciesSm2::generate();
+    let ciphertext = encryptor.seal ( b"Hello World".as_slice()).unwrap();
     let plaintext = decryptor.open ( ciphertext.as_slice()).unwrap();
     assert_eq! ( plaintext, b"Hello World");
 }
@@ -995,8 +995,8 @@ fn test_sm2_5 ()
 #[test]
 fn test_pkcs15 ()
 {
-    let (encryptor, decryptor) = RsaesPkcs15IesJweA128CbcHS256::<U256>  ::generate(&mut OsRng);
-    let ciphertext = encryptor.seal ( &mut OsRng, b"Hello World".as_slice()).unwrap();
+    let (encryptor, decryptor) = RsaesPkcs15IesJweA128CbcHS256::<U256>::generate();
+    let ciphertext = encryptor.seal ( b"Hello World".as_slice()).unwrap();
     let plaintext = decryptor.open ( ciphertext.as_slice()).unwrap();
     assert_eq! ( plaintext, b"Hello World");
 }

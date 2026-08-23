@@ -5,10 +5,9 @@ use aead::consts::U0;
 use aead::{Aead, AeadCore, Error, Key, KeyInit, KeySizeUser, Nonce, Payload, Tag, TagPosition};
 use digest::Mac;
 use cipher::{BlockModeDecrypt, BlockModeEncrypt, BlockSizeUser, IvSizeUser, KeyIvInit, StreamCipher};
-use cipher::typenum::{Diff, Unsigned};
+use cipher::typenum::{Diff, Sum, Unsigned};
 use cipher::inout::block_padding::Padding;
 use kdfs::hybrid_array::{Array, ArraySize};
-use kems::generic_array::typenum::Sum;
 
 ///
 /// Implementation of an Authenticaiton Encryption with Associated Data using a block cipher and a MAC function
