@@ -44,7 +44,7 @@ kdfs = { path = "../kdfs" }
 kems = { path = "../kems" }
 
 crypto-common = { version = "0.2.0"}
-aead = { version="0.6.0-rc.0", features = ["alloc"]}
+aead = { version="0.6.1", features = ["alloc"]}
 kem = { version = "0.3.0", features=["getrandom"]}
 #elliptic-curve = { version ="0.13.8", features=["jwk"]}
 digest = "0.11.0"
@@ -53,39 +53,39 @@ generic-array-old = { version = "0.14.7", package = "generic-array" }
 const-oid = { version = "0.10.0", features=["db"], package="const-oid" }
 
 
-p192 = { version = "0.14.0-rc.14", optional = true }
+p192 = { version = "0.14.0-rc.15", optional = true }
 p224 = { version = "0.14.0-rc.14", optional = true }
-p256 = { version = "0.14.0-rc.14", optional=true } #, features = ["jwk"] }
-p384 = { version = "0.14.0-rc.14", optional =true} #, features = ["jwk"] }
-p521 = { version = "0.14.0-rc.14", optional = true}
-sm2 = { version = "0.14.0-rc.14", optional = true }
+p256 = { version = "0.14.0", optional=true } #, features = ["jwk"] }
+p384 = { version = "0.14.0", optional =true} #, features = ["jwk"] }
+p521 = { version = "0.14.0", optional = true}
+sm2 = { version = "0.14.0-rc.15", optional = true }
 
-aes  =  { version = "0.9.0-rc.0", optional = true }
-aes-gcm = { version = "0.11.0-rc.3", optional = true }
-aes-kw = { version = "0.3.0-rc.1"}
-des = { version = "0.9.0-rc.0", optional = true }
+aes  =  { version = "0.9.3", optional = true }
+aes-gcm = { version = "0.11.1", optional = true }
+aes-kw = { version = "0.3.1"}
+des = { version = "0.9.0", optional = true }
 rsa  = { version = "0.10.0-rc.0", optional = true, features = ["hazmat"]}
-sha1_old = { version = "0.10.6", package="sha1" }
-sha1 = { version = "0.11.0-rc.0", optional = true }
-sha2_old = { version = "0.10.8", package = "sha2" }
-sha2 = { version = "0.11.0-rc.0", optional = true }
-sha3 = { version = "0.11.0-rc.3", optional = true }
+#sha1_old = { version = "0.10.6", package="sha1" }
+sha1 = { version = "0.11.0", optional = true }
+#sha2_old = { version = "0.10.8", package = "sha2" }
+sha2 = { version = "0.11.0", optional = true }
+sha3 = { version = "0.11.0", optional = true }
 sm3 = { version = "0.5.0", optional = true }
-hmac = { version = "0.13.0-rc.0", optional = true }
+hmac = { version = "0.13.0", optional = true }
 
 #ml-kem = { version = "0.2.1", optional = true }
 ml-kem = { version = "0.3.0", optional = true }
 x448 = { version = "0.6.0", optional = true}
-x25519-dalek = { version = "2.0.0", optional = true, features = ["static_secrets"] }
+x25519-dalek = { version = "3.0.0", optional = true, features = ["static_secrets"] }
 
 cbc  = { version = "0.2.0", optional = true }
-blake2 = { version = "0.11.0-rc.5", optional = true}
-salsa20 = { version = "0.11.0-rc.0", optional = true}
-chacha20poly1305 = { version = "0.11.0-rc.2", optional = true }
+blake2 = { version = "0.11.0", optional = true}
+salsa20 = { version = "0.11.0", optional = true}
+chacha20poly1305 = { version = "0.11.0", optional = true }
 
 crypto_secretbox = { version = "0.1.1", optional = true}
 
-spki_new = { version = "0.8.0-rc.4", package="spki"}
+spki_new = { version = "0.8.0", package="spki"}
 
 
 [dev-dependencies]
@@ -93,11 +93,11 @@ ies = { path = ".", features=["all"] }
 
 hex-literal = "0.4.1"
 #der_old = { version = "0.7.6", features=["derive"], package="der"}
-der = { version = "0.8.0-rc.10", features=["derive"], package="der" }
+der = { version = "0.8.2", features=["derive"], package="der" }
 #cms_old = { version="0.2.3", package="cms"}
 cms = { version = "0.3.0-pre.2", package="cms" } # pre versions are not ready for use
 #const_oid_new = { version = "0.10.0", package="const-oid"}
-x509_cert_new = { version = "0.3.0-rc.4", package="x509-cert"}
+x509_cert_new = { version = "0.3.0", package="x509-cert"}
 
 #pkcs1 = { version = "0.7.5" }
 #pkcs1 = { version = "0.8.0-rc.4", package="pkcs1" }
@@ -108,18 +108,18 @@ x509_cert_new = { version = "0.3.0-rc.4", package="x509-cert"}
 
 pem = "2"
 
-elliptic-curve = { version = "0.14.0-rc.17", features=["serde"] } #, features = ["jwk", "ecdh"] }
+elliptic-curve = { version = "0.14.1", features=["serde"] } #, features = ["jwk", "ecdh"] }
 
-ocb3 = { version = "0.2.0-rc.0"}
+ocb3 = { version = "0.2.0"}
 ofb = { version = "0.7.0"}
 ctr = "0.10.0"
 
 serde_json = "1.0.128"
 base64 = "0.21.5"
 
-rand = { version = "0.10.0-rc.9"}
-#poly1305 = {version = "0.9.0-rc.5"}
+rand = { version = "0.10.2"}
 poly1305 = {version = "0.8.0"}
 
 [patch.crates-io]
-hybrid-array = { path = "../hybrid-array-mod" }
+#hybrid-array = { path = "../hybrid-array-mod" }
+hybrid-array = { git = "https://github.com/warthog33/hybrid-array-mod.git/" }

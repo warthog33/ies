@@ -6,6 +6,7 @@ use crate::IesWithDerivedIv;
 use crate::IesWithKeyWrap;
 #[cfg(all(feature = "rustcrypto-secretbox", feature = "rustcrypto-blake2"))]
 use crate::cryptobox::XSalsa20Poly1305Wrapper;
+#[cfg(all(feature="rustcrypto-cmac", feature="rustcrypto-aes"))]
 use kdfs::emv::EmvCmacAes128;
 #[allow(unused)]
 use kdfs::misc::CryptoBoxKdf;
@@ -173,14 +174,17 @@ pub type RsaesPkcs15IesJweA128CbcHS256<L> = SimpleIes::<RsaKem<L, U32, Pkcs1v15E
 
 
 /// Used by Apple 
+#[cfg(all(feature="rustcrypto-sha2", feature="rustcrypto-aes"))]
 pub type EciesCompactX963SHA256AESGCM<C> = SimpleIes<KemWithKdf<EcdhKemCompact<C>, CombinerCiphertext, X963Kdf<Sha256>, U16>, AesGcm<Aes128, U16, U16>>;
     
 
 
 // EMV
+#[cfg(all(feature="rustcrypto-p256", feature="rustcrypto-sha2", feature="rustcrypto-aes"))]
 pub type EcdhKemP256EmvCmac128 = KemWithKdf<EcdhKem<NistP256, EcCompactEncoder<NistP256>>, CombinerNoKeys, EmvCmacAes128, U16>;
 
 
 // SM2 type from rfc_draft_shen_sm2_key_exchange_example_1
+#[cfg(all(feature="rustcrypto-sm2", feature="rustcrypto-sha2", feature="rustcrypto-aes"))]
 pub type EcdhSm2X963KdfSm2 = KemWithKdf<EcdhKem<sm2::Sm2, EcUncompressedEncoder<sm2::Sm2>>, CombinerNoKeys, X963Kdf<sm3::Sm3>, U16>;
     

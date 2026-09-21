@@ -38,7 +38,7 @@ use kdfs::rfc5869_hkdf::Hkdf;
 use kem::{TryDecapsulate, Decapsulate, Decapsulator, Kem, KeyExport, TryKeyInit};
 //use kems::mlkem::WrappedMlKem512;
 use kems::{KemExtensions, SetKdf,};
-use kems::draft_ietf_lamps_pq_composite_kem_07::{HybridKemMlKem768P256Sha3_256, ID_MLKEM768_ECDH_P256_SHA3_256};
+use kems::draft_ietf_lamps_pq_composite_kem::{HybridKemMlKem768P256Sha3_256, ID_MLKEM768_ECDH_P256_SHA3_256};
 use kems::draft_ietf_lamps_cms_kyber::MlKem512Hkdf256;
 use kems::kem_with_kdf::{CombinerNoKeys, KemWithKdf};
 //use kems::ml_kem::MlKemWrapper;

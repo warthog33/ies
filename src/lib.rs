@@ -23,11 +23,11 @@
 //! let plaintext_message = b"Hello World!";
 //! 
 //! let encryptor = EciesStandardX963SHA256AESGCM::from_key_encap(recipient_public_key);
-//! let ciphertext = encryptor.seal ( &mut OsRng, plaintext_message.as_ref()).unwrap();
+//! let ciphertext = encryptor.seal ( plaintext_message.as_ref()).unwrap();
 //! 
 //! let decryptor = EciesStandardX963SHA256AESGCM::from_key_decap(recipient_secret_key);
-//! let recovered_plaintext = decryptor.open ( ciphertext.as_ref() );
-//! assert! ( recovered_plaintext.unwrap() == plaintext_message );
+//! let recovered_plaintext = decryptor.open ( ciphertext.as_ref() ).unwrap();
+//! assert! ( recovered_plaintext == plaintext_message );
 //! ```
 
 use std::{marker::PhantomData, ops::{Add, Rem, Sub}};
@@ -38,11 +38,8 @@ use aes_kw::AesKw;
 use cipher::{Array, BlockCipherDecrypt, BlockCipherEncrypt, BlockSizeUser, KeySizeUser, typenum::{Diff, Mod, NonZero, Sum, Unsigned, Zero}};
 
 use kdfs::hybrid_array::ArraySize;
-use kems::{EncapsulateDeterministic, EncapsulateWithKeyWrapDeterministic};
-use kems::{TryDecapsulateWithKeyWrap, EncapsulateWithKeyWrap, FromKey, SetKdf};
-use kem::{InvalidKey};
-
-use kem::{Encapsulate, FromSeed, Kem, TryDecapsulate, TryKeyInit};
+use kems::{EncapsulateDeterministic, EncapsulateWithKeyWrapDeterministic, TryDecapsulateWithKeyWrap, EncapsulateWithKeyWrap, FromKey, SetKdf};
+use kem::{InvalidKey, Encapsulate, FromSeed, Kem, TryDecapsulate, TryKeyInit};
 
 
 pub mod ies_types;
