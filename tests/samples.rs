@@ -22,7 +22,7 @@ use kdfs::Kdf;
 use kdfs::hybrid_array::Array;
 use kdfs::emv::{EmvCmacAes128,EmvSessionKeyType,EmvCommonSessionKdf};
 
-use kem::{Kem, Decapsulate, Decapsulator, Encapsulate, KeyExport};
+use kem::{Kem, TryDecapsulate, Decapsulator, Encapsulate, KeyExport};
 use kems::rsakem::{RsaDecapsulator, RsaRaw};
 use kems::{OsRng, RngCore, KemExtensions,FromKey,EncapsulateDeterministic};
 use kems::iso18033_2::{EciesKemCompressedKdf1, EciesKemUncompressedKdf1, RsaKemKdf1, RsaKemKdf2};
@@ -89,7 +89,7 @@ fn test_iso18033_c_2_2() {
     // Decapsulate
     let decapsulator = EciesKemUncompressedKdf1::<NistP192,Sha1,U128>::try_from_slice_decap(&x).unwrap();
     
-    let k_calc2 = decapsulator.decapsulate(&c0_calc);
+    let k_calc2 = decapsulator.try_decapsulate(&c0_calc).unwrap();
     assert! ( k_calc2 == k);
 
 }
@@ -136,7 +136,7 @@ fn test_iso_18033_2_c_2_3 () {
 
     // Decapsulate
     let decapsulator = EciesKemCompressedKdf1::<NistP192,Sha1,U128>::try_from_slice_decap(&x).unwrap();
-    let k_calc2 = decapsulator.decapsulate(&c0_calc);
+    let k_calc2 = decapsulator.try_decapsulate(&c0_calc).unwrap();
     assert! ( k_calc2 == k);
 
 }
@@ -337,7 +337,7 @@ fn test_iso_18033_2_c_6_1 () {
     let priv_key = rsa::RsaPrivateKey::from_components(n_2, e_2, d_2, [].to_vec()).unwrap();
     let decapsulator = RsaKemKdf1::<U64, U128, Sha1>::from_private_key(priv_key);
 
-    let k_calc2 = decapsulator.decapsulate(&c0_calc2);
+    let k_calc2 = decapsulator.try_decapsulate(&c0_calc2).unwrap();
     assert_eq! ( k_calc2.as_slice(), k );
 }
 #[test]
@@ -351,7 +351,7 @@ fn test_rsa_kem () {
     let (c0_send, k_send )= encapsulator.encapsulate();
 
     let decapsulator = ::kems::iso18033_2::RsaKemKdf1::<U128, U16, Sha256>::from_private_key(key);
-    let k_recv = decapsulator.decapsulate(&c0_send);
+    let k_recv = decapsulator.try_decapsulate(&c0_send).unwrap();
 
     assert! ( k_send == k_recv);
 }
@@ -403,7 +403,7 @@ fn test_iso_18033_2_c_6_2 () {
     let d_2 = rsa::BoxedUint::from_str_radix_vartime(d, 10).unwrap();
     let priv_key = rsa::RsaPrivateKey::from_components(n_2, e_2, d_2, [].to_vec()).unwrap();
     let decapsulator = RsaKemKdf2::<U64, U128, Sha1>::from_private_key(priv_key);
-    let k_calc2 = decapsulator.decapsulate(&c0_calc);
+    let k_calc2 = decapsulator.try_decapsulate(&c0_calc).unwrap();
     assert_eq! ( k_calc2.as_slice(), k );
 
 }
@@ -441,7 +441,7 @@ fn test_emvco_blinded_diffie_helman() {
     let (c0_calc, k_send ) = encapsulator.encapsulate_deterministic(&blinded_secret_as_bytes);
 
     let decapsulator = KemWithKdf::<EcdhKemUncompressed::<_>, CombinerCiphertext, EmvCmacAes128, U16>::from_private_key(terminal_secret_key);
-    let k_recv = decapsulator.decapsulate(&c0_calc);
+    let k_recv = decapsulator.try_decapsulate(&c0_calc).unwrap();
     assert! ( k_recv == k_send );
 
     let session_key_confidentiality = EmvCommonSessionKdf::<Aes128>::derive_session_key(&k_recv, EmvSessionKeyType::SessionKeyConfidentiality);
@@ -496,7 +496,7 @@ fn test_emvco_book_e_we_6_1_p256 ()
     // Terminal side, decapsulates key 
     let decapsulator = EcdhKemP256EmvCmac128::try_from_slice_decap(&dK).unwrap();
     
-    let k_recv = decapsulator.decapsulate(&c0_calc);
+    let k_recv = decapsulator.try_decapsulate(&c0_calc).unwrap();
     assert! ( k_recv == KD );
 
     // Derive sub keys
@@ -580,7 +580,7 @@ fn apple_sample_1 ()
     assert_eq!(decapsulator.encapsulation_key().to_bytes(), pkrm);
 
     //let c0_ga = Array::<u8, U65>::from_slice(c0).try_into().unwrap();
-    let ss_key_recv = decapsulator.decapsulate(&c0.try_into().unwrap());
+    let ss_key_recv = decapsulator.try_decapsulate(&c0.try_into().unwrap()).unwrap();
 
     let (aes_key, aes_nonce) = ss_key_recv.split_ref::<U16>();
 
@@ -651,7 +651,7 @@ fn apple_sample_2 ()
     assert_eq!(z.raw_secret_bytes(), &Z);
     
     let decapsulator = KemWithKdf::<EcdhKemUncompressed::<NistP256>, CombinerCiphertext, X963Kdf<Sha256>, U16>::try_from_slice_decap(&dec_priv_key).unwrap();
-    let key = decapsulator.decapsulate(&cipher[0..65].try_into().unwrap());
+    let key = decapsulator.try_decapsulate(&cipher[0..65].try_into().unwrap()).unwrap();
 
     let aes_cipher = aes_gcm::AesGcm::<Aes128, U16, U16>::new(&key);
     let encrypted = aes_cipher.encrypt ( &Array::default()/*empty nonce*/, message.as_ref() ).unwrap();
@@ -926,7 +926,7 @@ fn openssl_encap_rsa () {
     let rsa_priv2 = rsa::RsaPrivateKey::from_pkcs8_pem(rsa_priv).unwrap();
 
     let decapsulator = RsaDecapsulator::<U128, U128, RsaRaw>::from_key(rsa_priv2);
-    let shared_secret = decapsulator.decapsulate(&encapped_key.as_slice().try_into().unwrap());
+    let shared_secret = decapsulator.try_decapsulate(&encapped_key.as_slice().try_into().unwrap()).unwrap();
     assert_eq!( shared_secret, key);
 }
 
@@ -937,7 +937,7 @@ fn test_ec_ml_kem ()
 {
     let (decapsulator, encapsulator) = EcdhKem::<NistP256, EcCompressedEncoder<NistP256>>::generate_keypair();
     let (ek, ss) = encapsulator.encapsulate();
-    let ss2 = decapsulator.decapsulate(&ek);
+    let ss2 = decapsulator.try_decapsulate(&ek).unwrap();
     assert_eq! ( ss, ss2);
 }
 

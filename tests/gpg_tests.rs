@@ -3,7 +3,7 @@ use aes::{Aes256,Aes128};
 use aes_kw::{AesKw, KwAes128};
 use digest::consts::*;
 use hex_literal::hex;
-use kdfs::{Label, Kdf};
+use kdfs::{Label, SaltedKdf};
 use kdfs::rfc5869_hkdf::Hkdf;
 use kdfs::hybrid_array::Array;
 
@@ -574,8 +574,8 @@ fn test_pqc_a_1_1() -> Result<(), pem::PemError>
     assert_eq! ( &plaintext[64..64+8], b"Testing\n");
 
     let cek3 = Array::default();
-    let (ct, ek) = <<HybridCapsulatorOpenPgpMlKem768X25519 as Kem>::EncapsulationKey as EncapsulateWithKeyWrap<_,_,AesKw<Aes256>,U32>>::encapsulate_and_wrap(&encapsulator, &cek3).unwrap();
-    let cek4 = <<HybridCapsulatorOpenPgpMlKem768X25519 as Kem>::DecapsulationKey as TryDecapsulateWithKeyWrap<_,_,AesKw<Aes256>,U32>>::decapsulate_and_unwrap(&decapsulator, &ct, &ek).unwrap();
+    let (ct, ek) = <<HybridCapsulatorOpenPgpMlKem768X25519 as Kem>::EncapsulationKey as EncapsulateWithKeyWrap<AesKw<Aes256>,U32>>::encapsulate_and_wrap(&encapsulator, &cek3).unwrap();
+    let cek4 = <<HybridCapsulatorOpenPgpMlKem768X25519 as Kem>::DecapsulationKey as TryDecapsulateWithKeyWrap<AesKw<Aes256>,U32>>::decapsulate_and_unwrap(&decapsulator, &ct, &ek).unwrap();
 
     assert_eq!( cek3, cek4);
     

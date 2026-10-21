@@ -111,7 +111,7 @@ impl<E,D,M,P> KeyInit for EncryptThenMac<E,D,M,P>
 where E: BlockModeEncrypt + KeyIvInit,
     M: KeyInit,
     E::KeySize: Add,
-    Sum<E::KeySize, E::KeySize>: ArraySize + Sub<E::KeySize>,
+    Sum<E::KeySize, E::KeySize>: ArraySize + Sub<E::KeySize, Output = E::KeySize>,
     Diff<Sum<E::KeySize, E::KeySize>, E::KeySize>: ArraySize,
 {
     fn new(key: &aead::Key<Self>) -> Self {
@@ -119,8 +119,11 @@ where E: BlockModeEncrypt + KeyIvInit,
 
         Self { 
             mac_func: M::new_from_slice(mac_key.as_slice()).unwrap(), 
-            enc_key: Array::try_from(enc_key.as_slice()).unwrap(), 
-            phantom2: PhantomData, phantom3: PhantomData }
+            //mac_func: M::new(mac_key),
+            enc_key: enc_key.clone(),
+            phantom2: PhantomData, 
+            phantom3: PhantomData 
+        }
     }
 }
 
@@ -131,6 +134,7 @@ where E:  BlockModeEncrypt + KeyIvInit,
     M: Mac + KeyInit + Clone,
     P: Padding,
     E::KeySize: ArraySize,
+    M::OutputSize: Sub<E::KeySize, Output = E::KeySize>,
 {
     ///
     /// MAC function as used by HS128 in JWE
@@ -165,7 +169,8 @@ where E:  BlockModeEncrypt + KeyIvInit,
         let encryptor = E::new(&self.enc_key, nonce);
         let ciphertext = encryptor.encrypt_padded_vec::<P>(plaintext_and_aad.msg);
         let tag = self.calc_mac(ciphertext.as_ref(), nonce, plaintext_and_aad.aad);
-        let truncated_tag = Tag::<Self>::try_from(&tag.finalize().into_bytes()[0..<E as KeySizeUser>::KeySize::USIZE]).unwrap();
+        //let truncated_tag = Tag::<Self>::try_from(&tag.finalize().into_bytes()[0..<E as KeySizeUser>::KeySize::USIZE]).unwrap();
+        let truncated_tag = Array::split::<E::KeySize>(tag.finalize().into_bytes()).0;
         Ok((ciphertext, truncated_tag))
     }
 
@@ -206,6 +211,7 @@ where E:  BlockModeEncrypt + KeyIvInit,
     M: Mac + KeyInit + Clone,
     P: Padding,
     E::KeySize: ArraySize,
+    M::OutputSize: Sub<E::KeySize, Output = E::KeySize>,
 {
     fn encrypt<'msg, 'aad>(
         &self,
@@ -226,8 +232,8 @@ where E:  BlockModeEncrypt + KeyIvInit,
 
         let ciphertext_tag_and_aad = ciphertext.into();
         let (ciphertext_in, tag_in) = ciphertext_tag_and_aad.msg.split_at_checked ( ciphertext_tag_and_aad.msg.len()- <E as KeySizeUser>::KeySize::USIZE).ok_or(Error)?;
-        let tag_in_ha = Array::try_from(tag_in).unwrap();
-        return self.decrypt_detached(nonce, Payload{msg: ciphertext_in, aad: ciphertext_tag_and_aad.aad}, &tag_in_ha);
+        let tag_in_ha = Array::slice_as_array(tag_in).ok_or(aead::Error)?;
+        self.decrypt_detached(nonce, Payload{msg: ciphertext_in, aad: ciphertext_tag_and_aad.aad}, tag_in_ha)
     }
 }
 

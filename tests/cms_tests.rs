@@ -22,7 +22,6 @@ use const_oid::db::fips203::ID_ALG_ML_KEM_512;
 use der::{Choice, Decode, Encode, Sequence};
 use der::asn1::{Any, AnyRef, BitString, OctetString, OctetStringRef, SetOfVec};
 use des::TdesEde3;
-//use elliptic_curve::SecretKey;
 use hex_literal::hex;
 use ies::{SimpleIes, Ies, IesWithKeyWrap};
 use ies::cms::{A128CbcNoMac, A256CbcNoMac, ID_AES_128_OFB_NEW, TdesCbcNoMac};
@@ -35,23 +34,18 @@ use kdfs::ansi_x9_44::X944Kdf3;
 use kdfs::misc::PassThroughKdf;
 use kdfs::hybrid_array::Array;
 use kdfs::rfc5869_hkdf::Hkdf;
-use kem::{TryDecapsulate, Decapsulate, Decapsulator, Kem, KeyExport, TryKeyInit};
-//use kems::mlkem::WrappedMlKem512;
+use kem::{TryDecapsulate, Decapsulator, Kem, KeyExport, TryKeyInit};
 use kems::{KemExtensions, SetKdf,};
 use kems::draft_ietf_lamps_pq_composite_kem::{HybridKemMlKem768P256Sha3_256, ID_MLKEM768_ECDH_P256_SHA3_256};
-use kems::draft_ietf_lamps_cms_kyber::MlKem512Hkdf256;
+use kems::rfc9936::MlKem512Hkdf256;
 use kems::kem_with_kdf::{CombinerNoKeys, KemWithKdf};
-//use kems::ml_kem::MlKemWrapper;
 use kems::rsakem::{RsaOrigKem,RsaPkcs15Kem,RsaOaepKem,ID_KEM_RSA};
 use kems::rfc5753::{DhSinglePassStdDhSha384KdfScheme, DhSinglePassStdDhSha512KdfScheme,DhSinglePassStdDhSha256KdfScheme};
 use kems::eckem::{EcdhKem, EcUncompressedEncoder};
-//use ml_kem::{EncodedSizeUser, KemCore, MlKem512, MlKem512Params, MlKem768};
-//use ml_kem::kem::Decapsulate;
 use ml_kem::{MlKem512, MlKem768, ml_kem_512};
 use p256::NistP256;
 use p384::NistP384;
 use p521::NistP521;
-//use pkcs1::RsaOaepParams;
 use rsa::traits::PublicKeyParts;
 use rsa::pkcs1::{DecodeRsaPrivateKey, RsaOaepParams};
 use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey,PrivateKeyInfoRef};
@@ -59,10 +53,7 @@ use sha1::Sha1;
 use sha2::{Sha256,Sha512};
 use x509_cert_new::ext::pkix::SubjectKeyIdentifier;
 
-
 mod common;
-
-    
 
 ///
 /// Struct used as additional information in the derivation process used for ECIES
@@ -129,7 +120,7 @@ fn test_cms_p256_decrypt()
         veqbWy8Y3knjNQ==\
         -----END CMS-----";
 
-    let recip_priv = elliptic_curve::SecretKey::<NistP256>::from_sec1_pem(priv_key_pem).unwrap();
+    let recip_priv = p256::SecretKey::from_sec1_pem(priv_key_pem).unwrap();
     let recip_pub = recip_priv.public_key();
 
     // Decode CMS structure
@@ -168,7 +159,7 @@ fn test_cms_p256_decrypt()
     let mut decapsulator = DhSinglePassStdDhSha256KdfScheme::from_private_key(recip_priv.clone());
     decapsulator.set_kdf(kdf2.clone());
     
-    let shared_secret: Array<u8, U24> = decapsulator.decapsulate(&encapsulated_key);
+    let shared_secret: Array<u8, U24> = decapsulator.try_decapsulate(&encapsulated_key).unwrap();
     let kek = aes_kw::KwAes192::new(&shared_secret);
     let cek = kek.unwrap_fixed_key(&Array::try_from(enc_key.as_bytes()).unwrap()).unwrap();
     // Decrypt content
@@ -228,7 +219,7 @@ fn test_cms_p384_decrypt2()
         hkgBZQMEASoEENKfnAmlAeJkgyXbj3xVAFaAEKt5ab7ouSd0SGi2ifEHq4M=\n\
         -----END CMS-----";
 
-    let recip_priv = elliptic_curve::SecretKey::<NistP384>::from_sec1_pem(priv_key_pem).unwrap();
+    let recip_priv = p384::SecretKey::from_sec1_pem(priv_key_pem).unwrap();
     let recip_pub = recip_priv.public_key();
 
     let content_info  = ContentInfo::from_der(pem::parse(cms).unwrap().contents()).unwrap();
@@ -247,7 +238,7 @@ fn test_cms_p384_decrypt2()
     
     let OriginatorKey(orig) = &recip.originator else { panic!("Unhandled")};
     assert! ( orig.algorithm.oid == ID_EC_PUBLIC_KEY);
-    let _sender_pub = elliptic_curve::PublicKey::<NistP384>::from_sec1_bytes(orig.public_key.raw_bytes()).unwrap();
+    let _sender_pub = p384::PublicKey::from_sec1_bytes(orig.public_key.raw_bytes()).unwrap();
     
     let ecc_shared_info = EccCmsSharedInfo{ key_info: AlgorithmIdentifierOwned { oid: ID_AES_192_WRAP, parameters: None }, entity_uinfo: recip.ukm.clone(), 
         supp_pub_info: OctetString::new(192u32.to_be_bytes()).unwrap() };
@@ -257,7 +248,7 @@ fn test_cms_p384_decrypt2()
     let mut decap = DhSinglePassStdDhSha384KdfScheme::from_private_key(recip_priv.clone());
     decap.set_kdf(kdf2.clone());
     let encapped_key = Array::try_from(orig.public_key.raw_bytes()).unwrap();
-    let shared_secret = decap.decapsulate(&encapped_key);
+    let shared_secret = decap.try_decapsulate(&encapped_key).unwrap();
     let kek = aes_kw::KwAes192::new(&shared_secret);
     let cek = kek.unwrap_fixed_key(enc_key.as_bytes().try_into().unwrap()).unwrap();
 
@@ -362,7 +353,7 @@ fn test_cms_p256_decrypt_gcm() -> Result<(), pem::PemError>
     let mut decapsulator = DhSinglePassStdDhSha256KdfScheme::from_private_key(recip_private.clone());
     decapsulator.set_kdf(kdf2.clone());
     
-    let shared_secret = decapsulator.decapsulate(&encapsulated_key);
+    let shared_secret = decapsulator.try_decapsulate(&encapsulated_key).unwrap();
     let kek = KwAes192::new(&shared_secret);
     let cek = kek.unwrap_fixed_key(wrapped_key.as_bytes().try_into().unwrap()).unwrap();
         
@@ -468,7 +459,7 @@ fn test_cms_p521_decrypt()
     decapsulator.set_kdf(kdf2.clone());
     let encapsulated_key = Array::try_from(orig.public_key.raw_bytes()).unwrap();
 
-    let kek= decapsulator.decapsulate(&encapsulated_key);
+    let kek= decapsulator.try_decapsulate(&encapsulated_key).unwrap();
     let kek = KwAes192::new(&kek);
     let cek = kek.unwrap_fixed_key(wrapped_key).unwrap();
 
@@ -565,7 +556,7 @@ fn test_cms_p384_decrypt() -> Result<(), common::Error>
     let mut decapsulator = DhSinglePassStdDhSha256KdfScheme::from_private_key(priv_p256.clone());
     decapsulator.set_kdf(kdf2.clone());
     
-    let shared_secret = decapsulator.decapsulate(&encapped_key);
+    let shared_secret = decapsulator.try_decapsulate(&encapped_key).unwrap();
     let kek = KwAes192::new(&shared_secret);
     let cek = kek.unwrap_fixed_key(wrapped_cek.as_bytes().try_into().unwrap()).unwrap();
     
@@ -653,7 +644,7 @@ fn test_cms_rsa_pkcs15_dncrypt() -> Result<(), common::Error>
     
     let decapsulator = RsaPkcs15Kem::<U128, U32>::from_private_key(rsa_priv.clone());
     let encapsulated_cek = Array::<u8,U128>::try_from(recip.enc_key.as_bytes()).unwrap();
-    let cek = decapsulator.decapsulate(&encapsulated_cek);
+    let cek = decapsulator.try_decapsulate(&encapsulated_cek).unwrap();
         
     let decryptor = cbc::Decryptor::<Aes256>::new(&cek, iv.as_bytes().try_into().unwrap());
     let plaintext = decryptor.decrypt_padded_vec::<Pkcs7>(ciphertext.as_bytes()).unwrap();
@@ -735,7 +726,7 @@ fn test_cms_rsa_oaep_dncrypt() -> Result<(), common::Error>
 
     // Recover encryption key
     let decapsulator = RsaOaepKem::<U128,U32,Sha1,Sha1>::from_private_key(rsa_priv.clone());
-    let cek = decapsulator.decapsulate(&encapsulated_key);
+    let cek = decapsulator.try_decapsulate(&encapsulated_key).unwrap();
     // Recover plaintext 
     let decryptor = cbc::Decryptor::<Aes256>::new(&cek, iv.as_bytes().try_into().unwrap());
     let plaintext = decryptor.decrypt_padded_vec::<Pkcs7>(ciphertext.as_bytes()).unwrap();
@@ -815,7 +806,7 @@ fn test_cms_rsa_pkcs7_decrypt() -> Result<(), common::Error>
     
     // Recover key
     let decapsulator = <RsaPkcs15Kem::<U128,U24> as Kem>::DecapsulationKey::from(rsa_priv.clone());
-    let cek = decapsulator.decapsulate(&encapsulated_key);
+    let cek = decapsulator.try_decapsulate(&encapsulated_key).unwrap();
     
     // Decrypt content
     let decryptor = cbc::Decryptor::<TdesEde3>::new(&cek, iv.as_bytes().try_into().unwrap());
@@ -886,7 +877,7 @@ fn test_cms_rsa_oaep_decrypt() -> Result<(), common::Error>
 
     let decapsulator = RsaOaepKem::<U128,U16,Sha1,Sha1>::from_private_key(rsa_priv.clone());
     let encapped_key = Array::<u8,U128>::try_from(recip.enc_key.as_bytes()).unwrap();
-    let cek = decapsulator.decapsulate(&encapped_key);
+    let cek = decapsulator.try_decapsulate(&encapped_key).unwrap();
 
     // Recover plaintext
     let encrypted_content = &enveloped_data.encrypted_content;
@@ -1081,7 +1072,7 @@ fn test_cms_ml_kem_512() -> Result<(), common::Error>
     assert_eq!( recipient_public.subject_public_key.as_bytes().unwrap().len(), 800);
     let recipient_public = ml_kem::array::Array::try_from(recipient_public.subject_public_key.as_bytes().unwrap()).unwrap();
     //let recipient_public = <ml_kem::kem::Kem<MlKem512Params> as KemCore>::EncapsulationKey::from_bytes(&recipient_public);
-    let recipient_public = ml_kem::ml_kem_512::EncapsulationKey::new(&recipient_public).unwrap();
+    let recipient_public = ml_kem_512::EncapsulationKey::new(&recipient_public).unwrap();
 
     // Parse private key
     let recipient_private = pem::parse(bob_private_pem)?;
@@ -1313,7 +1304,7 @@ fn test_rfc_9690_d_1()
     assert_eq!( ori.to_der().unwrap(), cms_ori);    
 
     let decapsulator = RsaOrigKem::<U384, U16, X944Kdf3::<Sha256>>::from_private_key(bob_prv.clone());
-    let k_calc2 = decapsulator.decapsulate(&Array::try_from(kem_ct).unwrap());
+    let k_calc2 = decapsulator.try_decapsulate(&Array::try_from(kem_ct).unwrap()).unwrap();
     let k_calc3 = ml_kem::kem::TryDecapsulate::try_decapsulate(&decapsulator, &Array::try_from(kem_ct).unwrap()).unwrap(); // use different traits
     assert_eq!(k_calc2.as_slice(), k_calc3.as_slice());
 
@@ -1328,7 +1319,7 @@ fn test_rfc_9690_d_1()
     let mut decapsulator = KemRsaX944Kdf3Sha256X944Kdf3Sha256::from_private_key(bob_prv.clone());
     decapsulator.set_kdf(kdf4.clone());
 
-    let kek3 = decapsulator.decapsulate(&Array::try_from(kem_ct).unwrap());
+    let kek3 = decapsulator.try_decapsulate(&Array::try_from(kem_ct).unwrap()).unwrap();
     assert_eq!(kek3, kek);
 
     let decryptor = KwAes128::new(&kek2);

@@ -9,7 +9,7 @@ use ies::Ies;
 use ies::ies_types::{EciesJweP256A128CbcHs256, EciesP384A256KwJweA128CbcHs256};
 use ies::{ies_types::{RsaesOaepJweA256Gcm,RsaesPkcs15IesJweA128CbcHS256}, rfc7518::A128CbcHS256};
 use kdfs::hybrid_array::Array;
-use kem::{Decapsulate};
+use kem::{TryDecapsulate};
 use kems::EncapsulateDeterministic;
 use kems::{KemExtensions, SetKdf};
 use kems::kem_with_kdf::{JwaKdf};
@@ -154,7 +154,7 @@ fn test_rfc_7518_appendix_c_ec_es (){
     let mut decapsulator = JweKemP256Sha256::<U16>::try_from_slice_decap(&bob_d).unwrap();
     decapsulator.set_kdf(jwa_kdf_recv);
 
-    let k_recv = decapsulator.decapsulate(&c0_send);
+    let k_recv = decapsulator.try_decapsulate(&c0_send).unwrap();
     assert! ( k_recv == derived_key);
 }
 
@@ -409,7 +409,7 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
 
     let decap = RsaPkcs15Kem::<U256, U32>::from_private_key(rsa_private.clone());
     let c0 = Array::try_from(rsa_encrypted_key.as_slice()).unwrap();
-    let cek_calc = decap.decapsulate(&c0);
+    let cek_calc = decap.try_decapsulate(&c0).unwrap();
     assert! ( cek_calc.as_slice() == &cek);
 
     // Decrypt completely using RSA
@@ -448,7 +448,7 @@ fn test_rfc_7520_5_13_ecies_and_rsa () {
     let mut ec_decapsulator = JweKemP384Sha256::try_from_slice_decap(&BASE64_URL_SAFE_NO_PAD.decode(ec_key_json["d"].as_str().unwrap()).unwrap()).unwrap();
     ec_decapsulator.set_kdf(JwaKdf::new(alg, b"", b""));
   
-    let kek_calc_ec = ec_decapsulator.decapsulate(&c0_ec);
+    let kek_calc_ec = ec_decapsulator.try_decapsulate(&c0_ec).unwrap();
 
     let kek = KwAes256::new(&kek_calc_ec);
     let encrypted_cek = BASE64_URL_SAFE_NO_PAD.decode(ec_encrypted_cek).unwrap();
@@ -606,7 +606,7 @@ fn test_rfc_7516_a_1_rsaies () {
     let decap = RsaOaepKem::<U256,U32,Sha1,Sha1>::from_private_key(rsa_private.clone());
     let c0 = Array::try_from(encrypted_cek.as_slice()).unwrap();
     
-    let cek_calc = decap.decapsulate(&c0);
+    let cek_calc = decap.try_decapsulate(&c0).unwrap();
 
     assert! ( cek_calc.as_slice() == cek);
 
@@ -736,7 +736,7 @@ fn test_rfc_7516_a_2_rsaies () {
     /// Start with decryption of the cek
     let decap = RsaPkcs15Kem::<U256,U32>::from_private_key(rsa_private.clone());
     let c0 = Array::try_from(encrypted_cek.as_slice()).unwrap();
-    let cek_calc = decap.decapsulate(&c0);
+    let cek_calc = decap.try_decapsulate(&c0).unwrap();
 
     assert! ( cek_calc.as_slice() == cek);
 
